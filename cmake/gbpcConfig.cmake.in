@@ -1,0 +1,13 @@
+# Get the directory containing this file.
+get_filename_component(gbpc_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+# Define the location of the headers and libraries.
+set(gbpc_INCLUDE_DIR "${gbpc_CMAKE_DIR}/../../../include")
+set(gbpc_LIBRARY "${gbpc_CMAKE_DIR}/../../../lib/libgbpc.so") # Adjust for static lib if necessary
+
+find_package(Eigen3 REQUIRED)
+
+# Make the above variables available to the finder.
+set(gbpc_FOUND TRUE)
+set(gbpc_INCLUDE_DIRS ${gbpc_INCLUDE_DIR})
+set(gbpc_LIBRARIES ${gbpc_LIBRARY} Eigen3::Eigen)
