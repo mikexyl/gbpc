@@ -47,8 +47,7 @@ int main(int argc, char **argv) {
 
   int num_samples = 100;
 
-  std::random_device rd;
-  std::mt19937 gen(rd());
+  std::mt19937 gen(0);
 
   std::vector<std::normal_distribution<>> d_point(6);
   d_point[0] = std::normal_distribution<>(rot_gt.x(), Sigma(0));

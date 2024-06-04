@@ -25,13 +25,7 @@ public:
   void update(Gaussian<Dim> message) {
     if (robust_kernel_) {
       Vector dx = GroupOps::dx(adj_var_->mu(), message.mu_);
-      std::cout << "before" << std::endl;
-      std::cout << message.eta_.transpose() << std::endl;
-      std::cout << message.lambda_.diagonal().transpose() << std::endl;
       robust_kernel_->filter(&message, dx);
-      std::cout << "after" << std::endl;
-      std::cout << message.eta_.transpose() << std::endl;
-      std::cout << message.lambda_.diagonal().transpose() << std::endl;
     }
 
     adj_var_->update({message});
