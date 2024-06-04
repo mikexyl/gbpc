@@ -14,5 +14,5 @@ if(GBPC_BUILD_TESTS)
     add_executable(test_gtsam
         test_gtsam.cpp)
     target_include_directories(test_gtsam PRIVATE ${GTSAM_INCLUDE_DIR} ${INCLUDES})
-    target_link_libraries(test_gtsam PRIVATE gbpc ${GTSAM_LIBRARIES})
+    target_link_libraries(test_gtsam PRIVATE gbpc gtsam)
 endif()
