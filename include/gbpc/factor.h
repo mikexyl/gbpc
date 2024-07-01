@@ -13,14 +13,15 @@ template <int Dim, class GroupOps> class Factor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+  using Ptr = std::shared_ptr<Factor<Dim, GroupOps>>;
+
   using RobustKernel = Huber<Dim>;
   using VariableT = Variable<Dim>;
   using Vector = Eigen::Vector<double, Dim>;
 
-  Factor(VariableT::Ptr adj_var, Vector noise_var,
+  Factor(VariableT::Ptr adj_var,
          std::unique_ptr<RobustKernel> robust_kernel = nullptr)
-      : adj_var_(adj_var), noise_var_(noise_var),
-        robust_kernel_(std::move(robust_kernel)) {}
+      : adj_var_(adj_var), robust_kernel_(std::move(robust_kernel)) {}
 
   void update(Gaussian<Dim> message) {
     if (robust_kernel_) {
@@ -31,10 +32,10 @@ public:
     adj_var_->update({message});
   }
 
+  auto adj_var() { return adj_var_; }
+
 protected:
   VariableT::Ptr adj_var_;
-
-  Vector noise_var_;
 
   std::unique_ptr<RobustKernel> robust_kernel_;
 };

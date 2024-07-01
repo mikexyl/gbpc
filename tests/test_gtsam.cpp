@@ -2,6 +2,7 @@
 #include <gtsam/geometry/Pose3.h>
 
 #include "gbpc/factor.h"
+#include "gbpc/graph.h"
 #include "gbpc/variable.h"
 
 using namespace gbpc;
@@ -62,11 +63,10 @@ int main(int argc, char **argv) {
   for (size_t j = 0; j < 6; j++) {
     initial_sample(j) = d_point[j](gen);
   }
-  Variable<6>::Ptr var = std::make_shared<Variable<6>>(
-      Gaussian<6>::fromMuSigma(initial_sample, Sigma.asDiagonal()));
-  std::unique_ptr<Huber<6>> robust_kernel =
-      robust ? std::make_unique<Huber<6>>(Sigma, Sigma * 2) : nullptr;
-  Factor<6, GroupOpsPose3> factor(var, Sigma, std::move(robust_kernel));
+  auto initial = Gaussian<6>::fromMuSigma(initial_sample, Sigma.asDiagonal());
+
+  Graph<6, GroupOpsPose3> graph;
+  graph.addNode(0, initial, robust, Sigma);
 
   float outlier_ratio = 0.2;
   for (size_t i = 0; i < num_samples; i++) {
@@ -80,13 +80,13 @@ int main(int argc, char **argv) {
     }
 
     auto message = Gaussian<6>::fromMuSigma(sample, Sigma.asDiagonal());
-    factor.update(message);
+    graph.sendMessage(0, message);
   }
 
   std::cout << "gt: " << pose_gt << std::endl;
   std::cout << "gt rot: " << Rot3::Logmap(pose_gt.rotation()).transpose()
             << std::endl;
-  std::cout << "mu: " << var->mu().transpose() << std::endl;
+  std::cout << "mu: " << graph.getNode(0)->mu().transpose() << std::endl;
 
   return 0;
 }
