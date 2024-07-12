@@ -10,7 +10,7 @@ namespace gbpc {
 using Key = size_t;
 
 template <int Dim, class GroupOps>
-class Graph : public std::map<size_t, typename Factor<6, GroupOps>::Ptr> {
+class Graph : public std::map<size_t, typename Factor<Dim, GroupOps>::Ptr> {
 public:
   using FactorT = Factor<Dim, GroupOps>;
   using FactorPtr = typename FactorT::Ptr;
@@ -24,17 +24,17 @@ public:
     }
 
     auto var = std::make_shared<Variable<Dim>>(initial);
-    std::unique_ptr<Huber<6>> robust_kernel =
-        robust ? std::make_unique<Huber<6>>(Sigma, Sigma * 2) : nullptr;
+    std::unique_ptr<Huber<Dim>> robust_kernel =
+        robust ? std::make_unique<Huber<Dim>>(Sigma, Sigma * 2) : nullptr;
     this->emplace(key, FactorPtr(new FactorT(var, std::move(robust_kernel))));
   }
 
-  void sendMessage(Key key, Gaussian<Dim> message) {
+  std::string sendMessage(Key key, Gaussian<Dim> message) {
     if (this->find(key) == this->end()) {
       throw NodeNotFoundException(key);
     }
 
-    this->at(key)->update(message);
+    return this->at(key)->update(message);
   }
 
   auto getNode(Key key) {

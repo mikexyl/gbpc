@@ -11,15 +11,19 @@ add_compile_options(-Wno-sign-compare)
 # find eigen
 find_package(Eigen3 REQUIRED)
 
+find_package(GTSAM REQUIRED)
+
 set(INCLUDES
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+        ${GTSAM_INCLUDE_DIR}
 )
 
 set(DEPENDENCIES
         PUBLIC
         Eigen3::Eigen
+        gtsam
 )
 
 add_library(gbpc SHARED

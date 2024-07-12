@@ -23,13 +23,21 @@ public:
          std::unique_ptr<RobustKernel> robust_kernel = nullptr)
       : adj_var_(adj_var), robust_kernel_(std::move(robust_kernel)) {}
 
-  void update(Gaussian<Dim> message) {
+  std::string update(Gaussian<Dim> message) {
+    std::stringstream ss;
+    ss << "Factor::update: " << adj_var_->mu().transpose() << " -> "
+       << message.mu_.transpose();
+
     if (robust_kernel_) {
       Vector dx = GroupOps::dx(adj_var_->mu(), message.mu_);
       robust_kernel_->filter(&message, dx);
     }
 
     adj_var_->update({message});
+
+    ss << " -> " << adj_var_->mu().transpose();
+
+    return ss.str();
   }
 
   auto adj_var() { return adj_var_; }
