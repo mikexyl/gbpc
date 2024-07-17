@@ -23,19 +23,23 @@ public:
          std::unique_ptr<RobustKernel> robust_kernel = nullptr)
       : adj_var_(adj_var), robust_kernel_(std::move(robust_kernel)) {}
 
-  std::string update(Gaussian<Dim> message) {
+  std::string update(Gaussian<Dim> message, GaussianMergeType merge_type) {
     std::stringstream ss;
-    ss << "Factor::update: " << adj_var_->mu().transpose() << " -> "
-       << message.mu_.transpose();
+    ss << "Factor::update: \n"
+       << adj_var_->mu().transpose() << " : "
+       << adj_var_->sigma().diagonal().transpose() << " + " << std::endl
+       << "  " << message.mu_.transpose() << " : "
+       << message.Sigma_.diagonal().transpose() << " = ";
 
-    if (robust_kernel_) {
+    if (robust_kernel_ and merge_type == GaussianMergeType::Merge) {
       Vector dx = GroupOps::dx(adj_var_->mu(), message.mu_);
       robust_kernel_->filter(&message, dx);
     }
 
-    adj_var_->update({message});
+    adj_var_->update({message}, merge_type);
 
-    ss << " -> " << adj_var_->mu().transpose();
+    ss << adj_var_->mu().transpose() << " : "
+       << adj_var_->sigma().diagonal().transpose();
 
     return ss.str();
   }

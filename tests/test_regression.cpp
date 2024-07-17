@@ -27,7 +27,7 @@ int main() {
     Eigen::Matrix<double, 1, 1> Sigma;
     Sigma << gt_Sigma;
     auto message = Gaussian<1>::fromMuSigma(mu_vec, Sigma);
-    vn_1d.update({message});
+    vn_1d.update({message}, GaussianMergeType::Merge);
   }
 
   std::cout << "1d regression: mu = " << vn_1d.mu()(0)
