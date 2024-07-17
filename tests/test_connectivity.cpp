@@ -169,12 +169,12 @@ void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y) {
 
 int main() {
 
-  Graph<2, GroupOpsScalar<2>> graph;
+  Graph<2, GroupOpsScalar<2>> coverage_graph;
 
   int num_clusters = 3;
   std::vector<int> num_samples;
   std::vector<std::vector<double>> x, y;
-  std::vector<Gaussian<2>> gaussians;
+  std::vector<Gaussian<2>> coverage;
   std::vector<float> centroids_x, centroids_y;
   std::vector<float> radii;
 
@@ -211,16 +211,71 @@ int main() {
         gsl_stats_covariance(x[i].data(), 1, y[i].data(), 1, y[i].size()),
         gsl_stats_covariance(x[i].data(), 1, y[i].data(), 1, y[i].size()),
         gsl_stats_variance(y[i].data(), 1, y[i].size());
-    gaussians.push_back(Gaussian<2>::fromMuSigma(mean, cov, num_samples[i]));
+    coverage.push_back(Gaussian<2>::fromMuSigma(mean, cov, num_samples[i]));
   }
 
   // send to gbp graph
   for (int i = 0; i < num_clusters; i++) {
-    auto gaussian = gaussians[i];
+    auto gaussian = coverage[i];
     if (i == 0) {
-      graph.addNode(0, gaussian, false, gaussian.Sigma_.diagonal());
+      coverage_graph.addNode(0, gaussian, false, gaussian.Sigma_.diagonal());
     } else {
-      std::cout << graph.sendMessage(0, gaussian, GaussianMergeType::Mixture)
+      // print hellinger distance
+      std::cout
+          << "Hellinger distance: "
+          << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+                 gaussian)
+          << std::endl;
+
+      std::cout << coverage_graph.sendMessage(0, gaussian,
+                                              GaussianMergeType::Mixture)
+                << std::endl;
+    }
+  }
+
+  std::cout << "hellinger distance: " << std::endl;
+  std::cout << " 0 -> 0: " << coverage[0].hellingerDistance(coverage[0])
+            << std::endl;
+  std::cout << " 0 -> 1: " << coverage[0].hellingerDistance(coverage[1])
+            << std::endl;
+  std::cout << " 0 -> 2: " << coverage[0].hellingerDistance(coverage[2])
+            << std::endl;
+  std::cout << " 1 -> 2: " << coverage[1].hellingerDistance(coverage[2])
+            << std::endl;
+  std::cout << " x -> 0: "
+            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+                   coverage[0])
+            << std::endl;
+  std::cout << " x -> 1: "
+            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+                   coverage[1])
+            << std::endl;
+  std::cout << " x -> 2: "
+            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+                   coverage[2])
+            << std::endl;
+
+  CBGraph<2, GroupOpsScalar<2>> cb_graph;
+  Gaussian<2>::Mu dummy_mu(0.0, 0.0);
+  Gaussian<2>::Sigma dummy_sigma;
+  dummy_sigma << 1.0, 0.0, 0.0, 1.0;
+  Gaussian<2> dummy_gaussian(dummy_mu, dummy_sigma, 0);
+
+  for (int i = 0; i < num_clusters; i++) {
+    cb_graph.addNode(i, dummy_gaussian, coverage[i], false);
+  }
+
+  // keep self looping for 10 iterations
+  for (int i = 0; i < 10; i++) {
+    int j = 0;
+    std::cout << cb_graph.sendMessage(j, dummy_gaussian, coverage[j])
+              << std::endl;
+  }
+
+  // keep sending messages to 0
+  for (int it = 0; it < 10; it++) {
+    for (int i = 1; i < num_clusters; i++) {
+      std::cout << cb_graph.sendMessage(0, dummy_gaussian, coverage[i])
                 << std::endl;
     }
   }
@@ -234,17 +289,21 @@ int main() {
     // hold plot
     hold(on);
 
-    double mean_x = gaussians[i].mu()(0);
-    double mean_y = gaussians[i].mu()(1);
+    double mean_x = coverage[i].mu()(0);
+    double mean_y = coverage[i].mu()(1);
 
     // plot the mean and std as ellipses
-    plot_ellipse(gaussians[i].Sigma_, mean_x, mean_y);
+    plot_ellipse(coverage[i].Sigma_, mean_x, mean_y);
     hold(on);
   }
 
   // plot the graph belief
-  auto mu = graph.at(0)->adj_var()->mu();
-  plot_ellipse(graph.at(0)->adj_var()->sigma(), mu(0), mu(1));
+  auto mu = coverage_graph.at(0)->adj_var()->mu();
+  plot_ellipse(coverage_graph.at(0)->adj_var()->sigma(), mu(0), mu(1));
+  hold(on);
+
+  mu = cb_graph.getNodeCoverage(0)->mu();
+  plot_ellipse(cb_graph.getNodeCoverage(0)->sigma(), mu(0), mu(1));
 
   // Set plot title and axis labels
   title("Multiple Ellipses");

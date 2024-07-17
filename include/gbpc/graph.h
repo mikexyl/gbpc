@@ -47,5 +47,68 @@ public:
     return this->at(key)->adj_var();
   }
 };
+
+/**
+ * @brief Coverage & belief graph
+ *
+ * @tparam Dim
+ * @tparam GroupOps
+ */
+template <int Dim, class GroupOps> class CBGraph {
+public:
+  using BeliefGraphT = Graph<Dim, GroupOps>;
+  using GaussianBelief = Gaussian<Dim>;
+  using CoverageGraphT = Graph<Dim, GroupOps>;
+  using GaussianCoverage = Gaussian<Dim>;
+
+  CBGraph() {
+    belief_graph_ = std::make_shared<BeliefGraphT>();
+    coverage_graph_ = std::make_shared<CoverageGraphT>();
+  }
+
+  void addNode(Key key, GaussianBelief initial, GaussianCoverage coverage,
+               bool robust, Eigen::Vector<double, Dim> Sigma = {}) {
+    belief_graph_->addNode(key, initial, robust, Sigma);
+    coverage_graph_->addNode(key, coverage, false);
+  }
+
+  std::string sendMessage(Key key, GaussianBelief message,
+                          GaussianCoverage coverage) {
+    std::stringstream ss;
+
+    double hellinger =
+        coverage_graph_->getNode(key)->gaussian().hellingerDistance(coverage);
+
+    ss << "Hellinger: " << hellinger << std::endl;
+
+    static constexpr float kOverlapEpsilon =
+        std::numeric_limits<double>::epsilon();
+    if (hellinger <= kOverlapEpsilon) {
+      ss << "Overlap is too high, discard message" << std::endl;
+      return ss.str();
+    }
+
+    // othewise, accept the message with relaxation
+    message.relax(hellinger);
+
+    ss << coverage_graph_->sendMessage(key, coverage,
+                                       GaussianMergeType::Mixture)
+       << std::endl;
+
+    ss << belief_graph_->sendMessage(key, message, GaussianMergeType::Merge)
+       << std::endl;
+
+    return ss.str();
+  }
+
+  auto getNodeBelief(Key key) { return belief_graph_->getNode(key); }
+
+  auto getNodeCoverage(Key key) { return coverage_graph_->getNode(key); }
+
+private:
+  std::shared_ptr<BeliefGraphT> belief_graph_;
+  std::shared_ptr<CoverageGraphT> coverage_graph_;
+};
+
 } // namespace gbpc
 #endif // GBPC_GRAPH

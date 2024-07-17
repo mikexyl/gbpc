@@ -41,7 +41,8 @@ public:
     typename Gaussian<Dim>::Sigma Sigma_mix =
         alpha * (gauss1.Sigma_ + mu1mu1t) +
         (1 - alpha) * (gauss2.Sigma_ + mu2mu2t) - mu_mixmu_mixt;
-    return Gaussian<Dim>::fromMuSigma(mu_mix, Sigma_mix);
+    return Gaussian<Dim>::fromMuSigma(mu_mix, Sigma_mix,
+                                      gauss1.N() + gauss2.N());
   }
 
   void update(const std::vector<Gaussian<Dim>> &messages,
@@ -84,6 +85,8 @@ public:
 
   auto mu() const { return mu_; }
   auto sigma() const { return Sigma_; }
+
+  auto gaussian() const { return Gaussian<Dim>::fromMuSigma(mu_, Sigma_); }
 
 protected:
   Gaussian<Dim> belief_;
