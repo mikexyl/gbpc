@@ -41,7 +41,7 @@ public:
         alpha * (gauss1.Sigma_ + mu1mu1t) +
         (1 - alpha) * (gauss2.Sigma_ + mu2mu2t) - mu_mixmu_mixt;
     return Gaussian<Dim>::fromMuSigma(mu_mix, Sigma_mix,
-                                      gauss1.N() + gauss2.N());
+                                      (gauss1.N() + gauss2.N()) / 2);
   }
 
   void update(const std::vector<Gaussian<Dim>> &messages,
