@@ -74,31 +74,38 @@ public:
 
   std::string sendMessage(Key key, GaussianBelief message,
                           GaussianCoverage coverage) {
-    std::stringstream ss;
+    throw std::runtime_error("WIP");
+    // std::stringstream ss;
 
-    double hellinger =
-        coverage_graph_->getNode(key)->gaussian().hellingerDistance(coverage);
+    // double hellinger =
+    //     coverage_graph_->getNode(key)->belief().hellingerDistance(coverage);
 
-    ss << "Hellinger: " << hellinger << std::endl;
+    // ss << "Hellinger: " << hellinger << std::endl;
 
-    static constexpr float kOverlapEpsilon =
-        std::numeric_limits<double>::epsilon();
-    if (hellinger <= kOverlapEpsilon) {
-      ss << "Overlap is too high, discard message" << std::endl;
-      return ss.str();
-    }
+    // static constexpr float kOverlapEpsilon =
+    //     std::numeric_limits<double>::epsilon();
 
-    // othewise, accept the message with relaxation
-    message.relax(hellinger);
+    // // if the var's coverage is smaller than the message's coverage, relax
+    // the
+    // // var
+    // auto node_norm = coverage_graph_->getNode(key)->sigma().norm();
+    // auto message_norm = coverage.sigma().norm();
+    // auto k_norm = node_norm / message_norm;
+    // k_norm = std::fmin(k_norm, 1.0f);
 
-    ss << coverage_graph_->sendMessage(key, coverage,
-                                       GaussianMergeType::Mixture)
-       << std::endl;
+    // float k_hellinger = 0.5 + 0.5 * hellinger;
 
-    ss << belief_graph_->sendMessage(key, message, GaussianMergeType::Merge)
-       << std::endl;
+    // belief_graph_->getNode(key)->relax(k_norm + k_hasfasfllinger);
+    // message.relax(k_hellinger);
 
-    return ss.str();
+    // ss << coverage_graph_->sendMessage(key, coverage,
+    //                                    GaussianMergeType::Mixture)
+    //    << std::endl;
+
+    // ss << belief_graph_->sendMessage(key, message, GaussianMergeType::Merge)
+    //    << std::endl;
+
+    // return ss.str();
   }
 
   auto getNodeBelief(Key key) { return belief_graph_->getNode(key); }

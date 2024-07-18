@@ -17,8 +17,7 @@ public:
 
   using Ptr = std::shared_ptr<Variable<Dim>>;
 
-  Variable(Gaussian<Dim> initial)
-      : belief_(initial), mu_(initial.mu_), Sigma_(initial.Sigma_) {}
+  Variable(Gaussian<Dim> initial) : belief_(initial) {}
 
   static Gaussian<Dim>
   mixtureGaussian(const Gaussian<Dim> &gauss1, const Gaussian<Dim> &gauss2,
@@ -59,17 +58,13 @@ public:
 
       belief_.eta_ = eta;
       belief_.lambda_ = lambda;
-      Sigma_ = lambda.inverse();
-      mu_ = Sigma_ * belief_.eta_;
+      belief_.updateMoments();
     } break;
     case GaussianMergeType::Mixture: {
 
       for (const auto &message : messages) {
         belief_ = mixtureGaussian(belief_, message);
       }
-
-      mu_ = belief_.mu_;
-      Sigma_ = belief_.Sigma_;
 
     } break;
     default:
@@ -83,16 +78,14 @@ public:
     // }
   }
 
-  auto mu() const { return mu_; }
-  auto sigma() const { return Sigma_; }
+  auto mu() const { return belief_.mu(); }
+  auto sigma() const { return belief_.sigma(); }
 
-  auto gaussian() const { return Gaussian<Dim>::fromMuSigma(mu_, Sigma_); }
+  auto const &belief() const { return belief_; }
+  void relax(double k) { belief_.relax(k); }
 
 protected:
   Gaussian<Dim> belief_;
-
-  Eigen::Vector<double, Dim> mu_;
-  Eigen::Matrix<double, Dim, Dim> Sigma_;
 };
 
 } // namespace gbpc

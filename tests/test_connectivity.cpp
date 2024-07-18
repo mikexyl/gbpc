@@ -221,11 +221,10 @@ int main() {
       coverage_graph.addNode(0, gaussian, false, gaussian.Sigma_.diagonal());
     } else {
       // print hellinger distance
-      std::cout
-          << "Hellinger distance: "
-          << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
-                 gaussian)
-          << std::endl;
+      std::cout << "Hellinger distance: "
+                << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
+                       gaussian)
+                << std::endl;
 
       std::cout << coverage_graph.sendMessage(0, gaussian,
                                               GaussianMergeType::Mixture)
@@ -243,15 +242,15 @@ int main() {
   std::cout << " 1 -> 2: " << coverage[1].hellingerDistance(coverage[2])
             << std::endl;
   std::cout << " x -> 0: "
-            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
                    coverage[0])
             << std::endl;
   std::cout << " x -> 1: "
-            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
                    coverage[1])
             << std::endl;
   std::cout << " x -> 2: "
-            << coverage_graph.at(0)->adj_var()->gaussian().hellingerDistance(
+            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
                    coverage[2])
             << std::endl;
 
