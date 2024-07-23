@@ -7,7 +7,7 @@
 namespace gbpc {
 class NodeNotFoundException : public std::exception {
 public:
-  NodeNotFoundException(size_t key) : key_(key) {
+  NodeNotFoundException(size_t key) noexcept : key_(key) {
     msg_ = "Node with key " + std::to_string(key_) + " not found";
   }
 
@@ -21,7 +21,7 @@ public:
 
 class NodeAlreadyExistsException : public std::exception {
 public:
-  NodeAlreadyExistsException(size_t key) : key_(key) {
+  NodeAlreadyExistsException(size_t key) noexcept : key_(key) {
     msg_ = "Node with key " + std::to_string(key_) + " not found";
   }
 

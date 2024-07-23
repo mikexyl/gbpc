@@ -63,6 +63,7 @@ public:
     case GaussianMergeType::Mixture: {
 
       for (const auto &message : messages) {
+        // TODO: ! this is not on manifold
         belief_ = mixtureGaussian(belief_, message);
       }
 

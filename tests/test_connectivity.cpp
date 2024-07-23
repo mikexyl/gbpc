@@ -128,7 +128,9 @@ auto fit_gaussian_2d(const std::vector<double> &x,
   return std::make_pair(mean, cov);
 }
 
-void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y) {
+void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y,
+                  std::string line_spec, float line_width,
+                  std::string label = "") {
   using namespace matplot;
 
   // Compute the eigenvalues and eigenvectors
@@ -164,12 +166,15 @@ void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y) {
     y.push_back(y_rot + mean_y);
   }
 
-  plot(x, y);
+  auto p = plot(x, y, line_spec.c_str());
+  p->line_width(line_width);
+  // p->display_name(label);
 }
 
 int main() {
 
   Graph<2, GroupOpsScalar<2>> coverage_graph;
+  Graph<2, GroupOpsScalar<2>> belief_graph;
 
   int num_clusters = 3;
   std::vector<int> num_samples;
@@ -254,29 +259,14 @@ int main() {
                    coverage[2])
             << std::endl;
 
-  CBGraph<2, GroupOpsScalar<2>> cb_graph;
   Gaussian<2>::Mu dummy_mu(0.0, 0.0);
   Gaussian<2>::Sigma dummy_sigma;
   dummy_sigma << 1.0, 0.0, 0.0, 1.0;
   Gaussian<2> dummy_gaussian(dummy_mu, dummy_sigma, 0);
 
-  for (int i = 0; i < num_clusters; i++) {
-    cb_graph.addNode(i, dummy_gaussian, coverage[i], false);
-  }
-
-  // keep self looping for 10 iterations
-  for (int i = 0; i < 10; i++) {
-    int j = 0;
-    std::cout << cb_graph.sendMessage(j, dummy_gaussian, coverage[j])
-              << std::endl;
-  }
-
-  // keep sending messages to 0
-  for (int it = 0; it < 10; it++) {
-    for (int i = 1; i < num_clusters; i++) {
-      std::cout << cb_graph.sendMessage(0, dummy_gaussian, coverage[i])
-                << std::endl;
-    }
+  belief_graph.addNode(0, coverage[0], false, coverage[0].Sigma_.diagonal());
+  for (int i = 1; i < num_clusters; i++) {
+    belief_graph.sendMessage(0, coverage[i], GaussianMergeType::Merge);
   }
 
   // Create a figure
@@ -292,23 +282,29 @@ int main() {
     double mean_y = coverage[i].mu()(1);
 
     // plot the mean and std as ellipses
-    plot_ellipse(coverage[i].Sigma_, mean_x, mean_y);
+    plot_ellipse(coverage[i].Sigma_, mean_x, mean_y, "r-", 1, "beliefs");
     hold(on);
   }
 
   // plot the graph belief
   auto mu = coverage_graph.at(0)->adj_var()->mu();
-  plot_ellipse(coverage_graph.at(0)->adj_var()->sigma(), mu(0), mu(1));
+  plot_ellipse(coverage_graph.at(0)->adj_var()->sigma(), mu(0), mu(1), "g-", 2,
+               "mix");
   hold(on);
 
-  mu = cb_graph.getNodeCoverage(0)->mu();
-  plot_ellipse(cb_graph.getNodeCoverage(0)->sigma(), mu(0), mu(1));
+  mu = belief_graph.at(0)->adj_var()->mu();
+  plot_ellipse(belief_graph.at(0)->adj_var()->sigma(), mu(0), mu(1), "b-", 2,
+               "merge");
+  hold(on);
 
   // Set plot title and axis labels
-  title("Multiple Ellipses");
+  title("Gaussian Mixture and Merging");
   xlabel("X Axis");
   ylabel("Y Axis");
+  legend();
 
+  // save fig
+  save("example_plot.png");
   show();
 
   // Wait for user input to close
