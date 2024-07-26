@@ -26,8 +26,14 @@ public:
     if (force_alpha.has_value()) {
       alpha = force_alpha.value();
     } else {
-      if (gauss1.N() == 0 or gauss2.N() == 0) {
-        throw std::runtime_error("N is zero");
+      if (gauss1.N() == 0 and gauss2.N() == 0) {
+        return gauss1;
+      }
+
+      if (gauss1.N() == 0) {
+        return gauss2;
+      } else if (gauss2.N() == 0) {
+        return gauss1;
       }
       alpha = gauss1.N() / (gauss1.N() + gauss2.N());
     }
@@ -64,7 +70,7 @@ public:
 
       for (const auto &message : messages) {
         // TODO: ! this is not on manifold
-        belief_ = mixtureGaussian(belief_, message);
+        belief_ = mixtureGaussian(belief_, message, std::nullopt);
       }
 
     } break;
