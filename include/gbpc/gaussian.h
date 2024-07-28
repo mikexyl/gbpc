@@ -6,17 +6,19 @@
 
 namespace gbpc {
 
-template <int Dim> class Gaussian {
-public:
+template <int Dim>
+class Gaussian {
+ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   using Mu = Eigen::Vector<double, Dim>;
   using Sigma = Eigen::Matrix<double, Dim, Dim>;
 
-  Gaussian(Eigen::Vector<double, Dim> eta = Eigen::Vector<double, Dim>::Zero(),
-           Eigen::Matrix<double, Dim, Dim> lambda =
-               Eigen::Matrix<double, Dim, Dim>::Zero(),
-           size_t N = 0)
+  explicit Gaussian(
+      Eigen::Vector<double, Dim> eta = Eigen::Vector<double, Dim>::Zero(),
+      Eigen::Matrix<double, Dim, Dim> lambda =
+          Eigen::Matrix<double, Dim, Dim>::Zero(),
+      size_t N = 0)
       : eta_(eta), lambda_(lambda), N_(N) {
     Sigma_ = lambda.inverse();
     mu_ = Sigma_ * eta;
@@ -24,7 +26,8 @@ public:
 
   Gaussian(Eigen::Vector<double, Dim> eta,
            Eigen::Matrix<double, Dim, Dim> lambda,
-           Eigen::Vector<double, Dim> mu, Eigen::Matrix<double, Dim, Dim> Sigma,
+           Eigen::Vector<double, Dim> mu,
+           Eigen::Matrix<double, Dim, Dim> Sigma,
            size_t N = 0)
       : mu_(mu), eta_(eta), Sigma_(Sigma), lambda_(lambda), N_(N) {}
 
@@ -36,14 +39,14 @@ public:
     return Gaussian<Dim>(eta, lambda, mu, Sigma, N);
   }
 
-  double hellingerDistance(const Gaussian<Dim> &other) const {
+  double hellingerDistance(const Gaussian<Dim>& other) const {
     return hellingerDistance(mu_, other.mu_, Sigma_, other.Sigma_);
   }
 
-  static double hellingerDistance(const Eigen::VectorXd &mu1,
-                                  const Eigen::VectorXd &mu2,
-                                  const Eigen::MatrixXd &cov1,
-                                  const Eigen::MatrixXd &cov2) {
+  static double hellingerDistance(const Eigen::VectorXd& mu1,
+                                  const Eigen::VectorXd& mu2,
+                                  const Eigen::MatrixXd& cov1,
+                                  const Eigen::MatrixXd& cov2) {
     // Ensure dimensions match
     assert(mu1.size() == mu2.size() &&
            "Mean vectors must have the same dimension");
@@ -91,7 +94,7 @@ public:
     updateMoments();
   }
 
-  size_t N() const { return N_; }
+  [[nodiscard]] size_t N() const { return N_; }
   auto mu() const { return mu_; }
   auto sigma() const { return Sigma_; }
 
@@ -100,6 +103,6 @@ public:
   size_t N_;
 };
 
-} // namespace gbpc
+}  // namespace gbpc
 
-#endif // GBPC_GAUSSIAN_H_
+#endif  // GBPC_GAUSSIAN_H_

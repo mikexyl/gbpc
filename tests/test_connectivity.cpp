@@ -301,7 +301,7 @@ int main() {
   title("Gaussian Mixture and Merging");
   xlabel("X Axis");
   ylabel("Y Axis");
-  legend();
+  matplot::legend("show");
 
   // save fig
   save("example_plot.png");
