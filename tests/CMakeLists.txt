@@ -10,10 +10,15 @@ if(GBPC_BUILD_TESTS)
         PRIVATE
         gbpc)
 
-    add_executable(test_gtsam
-        test_gtsam.cpp)
-    target_include_directories(test_gtsam PRIVATE ${INCLUDES})
-    target_link_libraries(test_gtsam PRIVATE gbpc)
+    find_package(GTSAM QUIET)
+    if(NOT GTSAM_FOUND)
+        message(STATUS "GTSAM not found. Skipping test_gtsam.")
+    else ()
+        add_executable(test_gtsam
+            test_gtsam.cpp)
+        target_include_directories(test_gtsam PRIVATE ${INCLUDES} ${GTSAM_INCLUDE_DIRS})
+        target_link_libraries(test_gtsam PRIVATE gbpc gtsam)
+    endif ()
 
     find_package(GSL REQUIRED)
     include(FetchContent)

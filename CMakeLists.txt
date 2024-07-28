@@ -16,7 +16,22 @@ add_compile_options(-Wno-sign-compare)
 # find eigen
 find_package(Eigen3 REQUIRED)
 
-find_package(GTSAM REQUIRED)
+# find GTSAM, if not found, fetch it
+find_package(GTSAM QUIET)
+if(NOT GTSAM_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+            GTSAM
+            GIT_REPOSITORY https://github.com/borglab/gtsam.git
+            GIT_TAG 4.2)
+
+    # Set GTSAM options before fetching
+    set(GTSAM_POSE3_EXPMAP ON)
+    set(GTSAM_ROT3_EXPMAP ON)
+    set(GTSAM_USE_SYSTEM_EIGEN ON)
+
+    FetchContent_MakeAvailable(GTSAM)
+endif()
 
 set(INCLUDES
         PUBLIC
@@ -40,6 +55,7 @@ target_link_libraries(gbpc
 
 # build tests
 add_subdirectory(tests)
+add_subdirectory(demo)
 
 install(TARGETS gbpc
         EXPORT gbpcTargets
