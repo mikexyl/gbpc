@@ -17,6 +17,15 @@ find_package(Eigen3 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
 
+find_package(GSL REQUIRED)
+include(FetchContent)
+FetchContent_Declare(
+matplotplusplus
+GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus.git
+GIT_TAG v1.2.1
+)
+FetchContent_MakeAvailable(matplotplusplus)
+
 set(INCLUDES
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -29,11 +38,11 @@ set(DEPENDENCIES
         Eigen3::Eigen
         gtsam
         TBB::tbb
+        GSL::gsl
 )
 
 add_library(gbpc SHARED
-        src/main.cpp
-        include/gbpc/visualization.h)
+        src/gaussian.cpp)
 target_include_directories(gbpc
         ${INCLUDES})
 target_link_libraries(gbpc

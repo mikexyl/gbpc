@@ -1,5 +1,3 @@
-// file: example_plot.cpp
-#include <Eigen/Eigen>
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_fit.h>
 #include <gsl/gsl_matrix.h>
@@ -9,35 +7,22 @@
 #include <gsl/gsl_vector.h>
 #include <matplot/matplot.h>
 
+#include <Eigen/Eigen>
+
 #include "gbpc/gbpc.h"
 
-using namespace matplot;
 using namespace gbpc;
-
-template <int Dim> class GroupOpsScalar {
-public:
-  using Vector = Eigen::Vector<double, Dim>;
-  static Vector dx(const Vector &mu_0, const Vector &mu_1) {
-    return mu_1 - mu_0;
-  }
-
-  static Vector toVector(double scalar) {
-    return (Vector() << scalar).finished();
-  }
-
-  static double fromVector(const Vector &vec) { return vec(0); }
-};
 
 struct data {
   size_t n;
-  const std::vector<double> &x;
-  const std::vector<double> &y;
+  const std::vector<double>& x;
+  const std::vector<double>& y;
 };
 
-int gaussian_f(const gsl_vector *params, void *data, gsl_vector *f) {
-  size_t n = ((struct data *)data)->n;
-  const std::vector<double> &x = ((struct data *)data)->x;
-  const std::vector<double> &y = ((struct data *)data)->y;
+int gaussian_f(const gsl_vector* params, void* data, gsl_vector* f) {
+  size_t n = ((struct data*)data)->n;
+  const std::vector<double>& x = ((struct data*)data)->x;
+  const std::vector<double>& y = ((struct data*)data)->y;
 
   double A = gsl_vector_get(params, 0);
   double x0 = gsl_vector_get(params, 1);
@@ -59,32 +44,32 @@ int gaussian_f(const gsl_vector *params, void *data, gsl_vector *f) {
   return GSL_SUCCESS;
 }
 
-auto fit_gaussian_2d(const std::vector<double> &x,
-                     const std::vector<double> &y) {
+auto fit_gaussian_2d(const std::vector<double>& x,
+                     const std::vector<double>& y) {
   size_t n = x.size();
 
   struct data d = {n, x, y};
 
-  const gsl_multifit_nlinear_type *T = gsl_multifit_nlinear_trust;
-  gsl_multifit_nlinear_workspace *work =
+  const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
+  gsl_multifit_nlinear_workspace* work =
       gsl_multifit_nlinear_alloc(T, nullptr, n, 7);
 
   gsl_multifit_nlinear_fdf fdf;
   fdf.f = gaussian_f;
-  fdf.df = nullptr; // Use numerical differentiation for the Jacobian
+  fdf.df = nullptr;  // Use numerical differentiation for the Jacobian
   fdf.fvv = nullptr;
   fdf.n = n;
   fdf.p = 7;
   fdf.params = &d;
 
-  gsl_vector *params = gsl_vector_alloc(7);
-  gsl_vector_set(params, 0, 1.0); // Initial guess for A
-  gsl_vector_set(params, 1, 0.0); // Initial guess for x0
-  gsl_vector_set(params, 2, 0.0); // Initial guess for y0
-  gsl_vector_set(params, 3, 1.0); // Initial guess for sigma_x
-  gsl_vector_set(params, 4, 1.0); // Initial guess for sigma_y
-  gsl_vector_set(params, 5, 0.0); // Initial guess for theta
-  gsl_vector_set(params, 6, 0.0); // Initial guess for offset
+  gsl_vector* params = gsl_vector_alloc(7);
+  gsl_vector_set(params, 0, 1.0);  // Initial guess for A
+  gsl_vector_set(params, 1, 0.0);  // Initial guess for x0
+  gsl_vector_set(params, 2, 0.0);  // Initial guess for y0
+  gsl_vector_set(params, 3, 1.0);  // Initial guess for sigma_x
+  gsl_vector_set(params, 4, 1.0);  // Initial guess for sigma_y
+  gsl_vector_set(params, 5, 0.0);  // Initial guess for theta
+  gsl_vector_set(params, 6, 0.0);  // Initial guess for offset
 
   gsl_multifit_nlinear_init(params, &fdf, work);
 
@@ -111,7 +96,7 @@ auto fit_gaussian_2d(const std::vector<double> &x,
   }
 
   // Extract the covariance matrix
-  gsl_matrix *covar = gsl_matrix_alloc(7, 7);
+  gsl_matrix* covar = gsl_matrix_alloc(7, 7);
   gsl_multifit_nlinear_covar(work->J, 0.0, covar);
 
   // Extract the parameters
@@ -128,8 +113,11 @@ auto fit_gaussian_2d(const std::vector<double> &x,
   return std::make_pair(mean, cov);
 }
 
-void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y,
-                  std::string line_spec, float line_width,
+void plot_ellipse(const Eigen::Matrix2d& cov,
+                  double mean_x,
+                  double mean_y,
+                  std::string line_spec,
+                  float line_width,
                   std::string label = "") {
   using namespace matplot;
 
@@ -166,20 +154,19 @@ void plot_ellipse(const Eigen::Matrix2d &cov, double mean_x, double mean_y,
     y.push_back(y_rot + mean_y);
   }
 
-  auto p = plot(x, y, line_spec.c_str());
+  auto p = matplot::plot(x, y, line_spec.c_str());
   p->line_width(line_width);
   // p->display_name(label);
 }
 
 int main() {
-
-  Graph<2, GroupOpsScalar<2>> coverage_graph;
-  Graph<2, GroupOpsScalar<2>> belief_graph;
+  Graph coverage_graph;
+  Graph belief_graph;
 
   int num_clusters = 3;
   std::vector<int> num_samples;
   std::vector<std::vector<double>> x, y;
-  std::vector<Gaussian<2>> coverage;
+  std::vector<Belief<Point2>> coverage;
   std::vector<float> centroids_x, centroids_y;
   std::vector<float> radii;
 
@@ -216,23 +203,25 @@ int main() {
         gsl_stats_covariance(x[i].data(), 1, y[i].data(), 1, y[i].size()),
         gsl_stats_covariance(x[i].data(), 1, y[i].data(), 1, y[i].size()),
         gsl_stats_variance(y[i].data(), 1, y[i].size());
-    coverage.push_back(Gaussian<2>::fromMuSigma(mean, cov, num_samples[i]));
+    coverage.push_back(Belief<Point2>(0, mean, cov, num_samples[i]));
   }
+
+  gbpc::Factor::shared_ptr factor;
 
   // send to gbp graph
   for (int i = 0; i < num_clusters; i++) {
     auto gaussian = coverage[i];
     if (i == 0) {
-      coverage_graph.addNode(0, gaussian, false, gaussian.Sigma_.diagonal());
+      auto var = std::make_shared<Variable<Point2>>(gaussian);
+      factor = coverage_graph.add(std::make_shared<PriorFactor<Point2>>(var));
     } else {
       // print hellinger distance
       std::cout << "Hellinger distance: "
-                << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
+                << coverage_graph.getNode<Point2>(0)->hellingerDistance(
                        gaussian)
                 << std::endl;
 
-      std::cout << coverage_graph.sendMessage(0, gaussian,
-                                              GaussianMergeType::Mixture)
+      std::cout << factor->update(gaussian, GaussianMergeType::Mixture)
                 << std::endl;
     }
   }
@@ -247,65 +236,65 @@ int main() {
   std::cout << " 1 -> 2: " << coverage[1].hellingerDistance(coverage[2])
             << std::endl;
   std::cout << " x -> 0: "
-            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
-                   coverage[0])
+            << coverage_graph.getNode<Point2>(0)->hellingerDistance(coverage[0])
             << std::endl;
   std::cout << " x -> 1: "
-            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
-                   coverage[1])
+            << coverage_graph.getNode<Point2>(0)->hellingerDistance(coverage[1])
             << std::endl;
   std::cout << " x -> 2: "
-            << coverage_graph.at(0)->adj_var()->belief().hellingerDistance(
-                   coverage[2])
+            << coverage_graph.getNode<Point2>(0)->hellingerDistance(coverage[2])
             << std::endl;
 
-  Gaussian<2>::Mu dummy_mu(0.0, 0.0);
-  Gaussian<2>::Sigma dummy_sigma;
+  Eigen::Vector2d dummy_mu(0.0, 0.0);
+  Eigen::Matrix2d dummy_sigma;
   dummy_sigma << 1.0, 0.0, 0.0, 1.0;
-  Gaussian<2> dummy_gaussian(dummy_mu, dummy_sigma, 0);
+  Belief<Point2> dummy_gaussian(0, dummy_mu, dummy_sigma, 0);
 
-  belief_graph.addNode(0, coverage[0], false, coverage[0].Sigma_.diagonal());
+  auto belief_factor = belief_graph.add(std::make_shared<PriorFactor<Point2>>(
+      std::make_shared<Variable<Point2>>(coverage[0])));
   for (int i = 1; i < num_clusters; i++) {
-    belief_graph.sendMessage(0, coverage[i], GaussianMergeType::Merge);
+    belief_factor->update(coverage[i], GaussianMergeType::Merge);
   }
 
+  std::cout << "visulizing: " << std::endl;
+
   // Create a figure
-  auto fig = figure();
+  auto fig = matplot::figure();
 
   // plot the samples, and color by cluster
   for (int i = 0; i < num_clusters; i++) {
-    plot(x[i], y[i], "*");
+    matplot::plot(x[i], y[i], "*");
     // hold plot
-    hold(on);
+    matplot::hold(matplot::on);
 
     double mean_x = coverage[i].mu()(0);
     double mean_y = coverage[i].mu()(1);
 
     // plot the mean and std as ellipses
-    plot_ellipse(coverage[i].Sigma_, mean_x, mean_y, "r-", 1, "beliefs");
-    hold(on);
+    plot_ellipse(coverage[i].Sigma(), mean_x, mean_y, "r-", 1, "beliefs");
+    matplot::hold(matplot::on);
   }
 
   // plot the graph belief
-  auto mu = coverage_graph.at(0)->adj_var()->mu();
-  plot_ellipse(coverage_graph.at(0)->adj_var()->sigma(), mu(0), mu(1), "g-", 2,
-               "mix");
-  hold(on);
+  auto mu = coverage_graph.getNode<Point2>(0)->mu();
+  plot_ellipse(
+      coverage_graph.getNode<Point2>(0)->Sigma(), mu(0), mu(1), "g-", 2, "mix");
+  matplot::hold(matplot::on);
 
-  mu = belief_graph.at(0)->adj_var()->mu();
-  plot_ellipse(belief_graph.at(0)->adj_var()->sigma(), mu(0), mu(1), "b-", 2,
-               "merge");
-  hold(on);
+  mu = belief_graph.getNode<Point2>(0)->mu();
+  plot_ellipse(
+      belief_graph.getNode<Point2>(0)->Sigma(), mu(0), mu(1), "b-", 2, "merge");
+  matplot::hold(matplot::on);
 
   // Set plot title and axis labels
-  title("Gaussian Mixture and Merging");
-  xlabel("X Axis");
-  ylabel("Y Axis");
+  matplot::title("Gaussian Mixture and Merging");
+  matplot::xlabel("X Axis");
+  matplot::ylabel("Y Axis");
   matplot::legend("show");
 
   // save fig
-  save("example_plot.png");
-  show();
+  matplot::save("example_plot.png");
+  matplot::show();
 
   // Wait for user input to close
   std::cout << "Press Enter to close the plot..." << std::endl;
