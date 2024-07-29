@@ -103,6 +103,29 @@ auto plotEllipse(sf::RenderWindow* window,
   return ellipse;
 }
 
+bool moveEllipse(sf::RenderWindow* window,
+                 const sf::Color& color,
+                 const Gaussian& gaussian,
+                 const Point2& target_position,
+                 float progress,
+                 std::function<void()> finish_callback = {}) {
+  auto start_position = gaussian.mu();
+  auto curr_position =
+      (1 - progress) * start_position + target_position * progress;
+
+  Gaussian curr_gaussian(
+      gaussian.key(), curr_position, gaussian.Sigma(), gaussian.N());
+
+  plotEllipse(window, color, curr_gaussian);
+
+  bool finished = progress >= 0.99;
+  if (finished) {
+    finish_callback();
+  }
+
+  return not finished;
+}
+
 void plotPoints(sf::RenderWindow* window,
                 const sf::Color& color,
                 const std::vector<double>& x,
@@ -137,6 +160,8 @@ sf::Color setAlpha(sf::Color color, float alpha) {
 }
 
 int main() {
+  static constexpr float kBeliefAlpha = 0.1;
+
   // set now time as seed
   auto now = std::chrono::system_clock::now();
   auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
@@ -166,38 +191,55 @@ int main() {
   }
 
   sf::Clock clock;
-  sf::Time cooldown_time =
+  sf::Time animation_time =
       sf::seconds(0.5f);  // Set cooldown time to 0.5 seconds
-  sf::Time last_key_press_time = sf::Time::Zero;
+  sf::Time animation_start_time = sf::Time::Zero;
+  std::function<void()> finish_callback;
 
   int active_cluster = 0;
+  bool animating = false;
 
   while (window.isOpen()) {
     sf::Event event;
     while (window.pollEvent(event)) {
       if (event.type == sf::Event::Closed) window.close();
     }
+    window.clear(sf::Color::White);
 
     // Get elapsed time since the last key press
-    sf::Time elapsedTime = clock.getElapsedTime() - last_key_press_time;
+    sf::Time elapsed_time = clock.getElapsedTime() - animation_start_time;
+
+    auto lambda_callback = [&prior_factor, &coverage](int active_cluster) {
+      prior_factor->update(coverage[active_cluster], GaussianMergeType::Merge);
+    };
 
     // Check keyboard input with cooldown
-    if (elapsedTime >= cooldown_time) {
+    if (not animating) {
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
         // Perform the action for Space key
-        prior_factor->update(coverage[active_cluster],
-                             GaussianMergeType::Merge);
         active_cluster = (active_cluster - 1 + num_clusters) % num_clusters;
-        last_key_press_time =
-            clock.getElapsedTime();  // Reset the cooldown timer
+
+        // start animation
+        finish_callback = [&lambda_callback, active_cluster]() {
+          lambda_callback(active_cluster);
+        };
+        animating = true;
+        animation_start_time = clock.getElapsedTime();
+        std::cout << "start animation" << std::endl;
       } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
         // Perform the action for Q key
         window.close();
         exit(0);
       }
+    } else {
+      animating =
+          moveEllipse(&window,
+                      setAlpha(colors[active_cluster], kBeliefAlpha),
+                      coverage[active_cluster],
+                      graph.getNode<Point2>(0)->mu(),
+                      elapsed_time.asSeconds() / animation_time.asSeconds(),
+                      finish_callback);
     }
-
-    window.clear(sf::Color::White);
 
     for (int i = 0; i < num_clusters; i++) {
       plotEllipse(&window, setAlpha(colors[i], 0.1), coverage[i]);
