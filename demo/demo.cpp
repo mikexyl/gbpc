@@ -63,8 +63,10 @@ auto generateSamples(int num_clusters, int max_samples, float distance) {
 }
 
 auto plotEllipse(sf::RenderWindow* window,
-                 const Eigen::Matrix2d& cov,
-                 const Eigen::Vector2d& mean) {
+                 const sf::Color& color,
+                 Gaussian gaussian) {
+  auto mean = gaussian.mu();
+  auto cov = gaussian.Sigma();
   double mean_x = mean[0], mean_y = mean[1];
 
   // Eigen decomposition of the covariance matrix
@@ -94,8 +96,7 @@ auto plotEllipse(sf::RenderWindow* window,
   ellipse.setOrigin(1.0f, 1.0f);        // Set origin to center of the circle
   ellipse.setPosition(mean_x, mean_y);  // Set position to the mean
   ellipse.setRotation(angle);           // Rotate it to the correct orientation
-  ellipse.setFillColor(
-      sf::Color(0, 255, 0, 100));  // Set the color with transparency
+  ellipse.setFillColor(color);          // Set the color
 
   window->draw(ellipse);
 
@@ -103,15 +104,36 @@ auto plotEllipse(sf::RenderWindow* window,
 }
 
 void plotPoints(sf::RenderWindow* window,
+                const sf::Color& color,
                 const std::vector<double>& x,
                 const std::vector<double>& y,
                 float radius) {
   for (int i = 0; i < x.size(); i++) {
     sf::CircleShape point(radius);
-    point.setFillColor(sf::Color::Red);
+    point.setFillColor(color);
     point.setPosition(x[i], y[i]);
     window->draw(point);
   }
+}
+
+// Function to map a scalar value to an SFML color
+sf::Color getColorFromValue(float value, float minValue, float maxValue) {
+  // Normalize value to [0, 1]
+  float normalized = (value - minValue) / (maxValue - minValue);
+
+  // Clamp the normalized value to [0, 1]
+  normalized = std::min(1.0f, std::max(0.0f, normalized));
+
+  // Map the normalized value to a color
+  sf::Uint8 red = static_cast<sf::Uint8>(normalized * 255);
+  sf::Uint8 blue = static_cast<sf::Uint8>((1.0f - normalized) * 255);
+
+  return sf::Color(red, 0, blue);
+}
+
+sf::Color setAlpha(sf::Color color, float alpha) {
+  color.a = static_cast<sf::Uint8>(alpha * 255);
+  return color;
 }
 
 int main() {
@@ -126,15 +148,29 @@ int main() {
   auto const& [coverage, centroids_x, centroids_y, radii, x, y] =
       generateSamples(num_clusters, 100, window_height / 4.0);
 
-  auto ellipse_xy = plotEllipse(
-      coverage[0].Sigma(), coverage[0].mu()[0], coverage[0].mu()[1]);
+  Graph graph;
+  auto prior_factor = std::make_shared<PriorFactor<Point2>>(
+      std::make_shared<Variable<Point2>>(coverage[0]));
+  graph.add(prior_factor);
 
   sf::RenderWindow window(sf::VideoMode(window_width, window_height),
                           "GBP Animation");
-  sf::CircleShape point(5);
-  point.setFillColor(sf::Color::Red);
+  // set white background
+  window.clear(sf::Color::White);
 
   float freq = 30.0;
+
+  std::vector<sf::Color> colors;
+  for (int i = 0; i < 1000; i++) {
+    colors.emplace_back(getColorFromValue(i, 0, num_clusters - 1));
+  }
+
+  sf::Clock clock;
+  sf::Time cooldown_time =
+      sf::seconds(0.5f);  // Set cooldown time to 0.5 seconds
+  sf::Time last_key_press_time = sf::Time::Zero;
+
+  int active_cluster = 0;
 
   while (window.isOpen()) {
     sf::Event event;
@@ -142,14 +178,34 @@ int main() {
       if (event.type == sf::Event::Closed) window.close();
     }
 
-    window.clear();
+    // Get elapsed time since the last key press
+    sf::Time elapsedTime = clock.getElapsedTime() - last_key_press_time;
 
-    for (int i = 0; i < num_clusters; i++) {
-      plotEllipse(&window, coverage[i].Sigma(), coverage[i].mu());
-      plotPoints(&window, x[i], y[i], 1.);
+    // Check keyboard input with cooldown
+    if (elapsedTime >= cooldown_time) {
+      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+        // Perform the action for Space key
+        prior_factor->update(coverage[active_cluster],
+                             GaussianMergeType::Merge);
+        active_cluster = (active_cluster - 1 + num_clusters) % num_clusters;
+        last_key_press_time =
+            clock.getElapsedTime();  // Reset the cooldown timer
+      } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
+        // Perform the action for Q key
+        window.close();
+        exit(0);
+      }
     }
 
-    window.draw(point);
+    window.clear(sf::Color::White);
+
+    for (int i = 0; i < num_clusters; i++) {
+      plotEllipse(&window, setAlpha(colors[i], 0.1), coverage[i]);
+      plotPoints(&window, setAlpha(colors[i], 1.0), x[i], y[i], 1.);
+    }
+
+    plotEllipse(&window, setAlpha(colors[4], 0.6), *graph.getNode<Point2>(0));
+
     window.display();
 
     sf::sleep(sf::milliseconds(1000 / freq));
