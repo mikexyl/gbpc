@@ -21,7 +21,7 @@ concept PoseConcept = std::same_as<T, Pose3> || std::same_as<T, Pose2> ||
 
 namespace gbpc {
 
-enum class GaussianMergeType { Merge, Mixture, Replace };
+enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
 
 class Gaussian {
  public:

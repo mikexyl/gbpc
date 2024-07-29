@@ -139,6 +139,21 @@ void plotPoints(sf::RenderWindow* window,
   }
 }
 
+void plotConnectBeliefs(sf::RenderWindow* window,
+                        const sf::Color& color,
+                        const Gaussian& gaussian1,
+                        const Gaussian& gaussian2) {
+  auto mean1 = gaussian1.mu();
+  auto mean2 = gaussian2.mu();
+
+  sf::Vertex line[] = {
+      sf::Vertex(sf::Vector2f(mean1[0], mean1[1]), color),
+      sf::Vertex(sf::Vector2f(mean2[0], mean2[1]), color),
+  };
+
+  window->draw(line, 2, sf::Lines);
+}
+
 // Function to map a scalar value to an SFML color
 sf::Color getColorFromValue(float value, float minValue, float maxValue) {
   // Normalize value to [0, 1]
@@ -167,6 +182,7 @@ int main() {
   auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
   unsigned seed = now_ms.time_since_epoch().count();
   srand(seed);
+  std::cout << "seed: " << seed;
 
   int window_width = 800, window_height = 800;
   int num_clusters = 3;
@@ -225,7 +241,6 @@ int main() {
         };
         animating = true;
         animation_start_time = clock.getElapsedTime();
-        std::cout << "start animation" << std::endl;
       } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
         // Perform the action for Q key
         window.close();
@@ -244,6 +259,9 @@ int main() {
     for (int i = 0; i < num_clusters; i++) {
       plotEllipse(&window, setAlpha(colors[i], 0.1), coverage[i]);
       plotPoints(&window, setAlpha(colors[i], 1.0), x[i], y[i], 1.);
+
+      plotConnectBeliefs(
+          &window, sf::Color::Black, coverage[i], *graph.getNode<Point2>(0));
     }
 
     plotEllipse(&window, setAlpha(colors[4], 0.6), *graph.getNode<Point2>(0));
