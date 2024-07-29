@@ -19,6 +19,8 @@ class Variable : public Belief<VALUE> {
   using Belief = Belief<VALUE>;
 
   Variable(const Belief& initial) : Belief(initial) {}
+
+  void setBelief(const Belief& belief) { Belief::operator=(belief); }
 };
 
 }  // namespace gbpc

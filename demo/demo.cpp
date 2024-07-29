@@ -192,8 +192,8 @@ int main() {
       generateSamples(num_clusters, 100, window_height / 4.0);
 
   Graph graph;
-  auto prior_factor = std::make_shared<PriorFactor<Point2>>(
-      std::make_shared<Variable<Point2>>(coverage[0]));
+  auto var = std::make_shared<Variable<Point2>>(coverage[0]);
+  auto prior_factor = std::make_shared<PriorFactor<Point2>>(var);
   graph.add(prior_factor);
 
   sf::RenderWindow window({static_cast<unsigned int>(window_width),
@@ -209,12 +209,20 @@ int main() {
 
   auto comboBox = tgui::ComboBox::create();
   comboBox->setSize(120, 21);
-  comboBox->setPosition(75,50);
+  comboBox->setPosition(75, 50);
   comboBox->addItem("Merge");
   comboBox->addItem("MergeRobust");
   comboBox->addItem("Mixture");
   comboBox->setSelectedItem("Merge");
   child->add(comboBox);
+
+  // add a reset button
+  auto button = tgui::Button::create();
+  button->setPosition(75, 80);
+  button->setText("Reset");
+  button->setSize(100, 30);
+  button->onPress([&var, &coverage] { var->setBelief(coverage[0]); });
+  child->add(button);
 
   GaussianMergeType merge_type;
   auto get_merge_type = [&merge_type, &comboBox]() {
