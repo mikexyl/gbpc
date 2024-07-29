@@ -5,6 +5,8 @@
 #include "gbpc/factor.h"
 #include "gbpc/variable.h"
 
+using namespace gtsam;
+
 namespace gbpc {
 
 using Key = size_t;

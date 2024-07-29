@@ -3,7 +3,12 @@
 
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/LevenbergMarquardtParams.h>
+#include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/slam/BetweenFactor.h>
 
 #include <Eigen/Eigen>
 #include <concepts>
@@ -191,6 +196,20 @@ class Gaussian {
     }
   }
 
+  std::string print() const {
+    std::stringstream ss;
+    ss << "key: " << key_ << std::endl;
+    ss << "mu: " << mu_.transpose() << std::endl;
+    ss << "Sigma: " << Sigma_ << std::endl;
+    ss << "N: " << N_ << std::endl;
+    return ss.str();
+  }
+
+  friend std::ostream& operator<<(std::ostream& os, const This& obj) {
+    os << obj.print();
+    return os;
+  }
+
  protected:
   Eigen::VectorXd mu_, eta_;
   Eigen::MatrixXd Sigma_, lambda_;
@@ -217,6 +236,32 @@ class Belief : public Gaussian {
 
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
       : Gaussian(key, mu, Sigma, N) {}
+
+  static Gaussian optimizeWithGtsam(const std::vector<This>& beliefs) {
+    NonlinearFactorGraph graph;
+    Values values;
+    for (auto belief : beliefs) {
+      auto noise = noiseModel::Gaussian::Covariance(belief.Sigma());
+      VALUE value = belief.mu();
+      auto factor = NonlinearFactor::shared_ptr(
+          new gtsam::PriorFactor<VALUE>(belief.key(), value, noise));
+      graph.add(factor);
+      values.insert_or_assign(belief.key(), value);
+    }
+
+    auto key = beliefs.front().key();
+
+    LevenbergMarquardtOptimizer optimizer(graph, values);
+    auto result = optimizer.optimize();
+
+    // get variance from the result
+    Marginals marginals(graph, result);
+    auto cov = marginals.marginalCovariance(key);
+
+    auto mu = result.at<VALUE>(key);
+
+    return Gaussian(key, mu, cov, 0);
+  }
 };
 
 }  // namespace gbpc

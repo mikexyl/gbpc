@@ -193,7 +193,7 @@ int main() {
 
   Graph graph;
   auto var = std::make_shared<Variable<Point2>>(coverage[0]);
-  auto prior_factor = std::make_shared<PriorFactor<Point2>>(var);
+  auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(var);
   graph.add(prior_factor);
 
   sf::RenderWindow window({static_cast<unsigned int>(window_width),
@@ -230,11 +230,17 @@ int main() {
   messageBox->addButton("OK");
   messageBox->onButtonPress([&] { messageBox->close(); });
 
+  std::optional<Gaussian> gtsam_belief;
+
   auto gtsam_opt_button = tgui::Button::create();
   gtsam_opt_button->setPosition(10, 70);
   gtsam_opt_button->setText("optimize with gtsam");
   gtsam_opt_button->setSize(80, 30);
-  gtsam_opt_button->onPress([&] { gui.add(messageBox); });
+  gtsam_opt_button->onPress([&] {
+    auto belief = Belief<Point2>::optimizeWithGtsam(coverage);
+    gtsam_belief.emplace(belief);
+    std::cout << *gtsam_belief << std::endl;
+  });
   child->add(gtsam_opt_button);
 
   GaussianMergeType merge_type;
@@ -309,6 +315,11 @@ int main() {
                       graph.getNode<Point2>(0)->mu(),
                       elapsed_time.asSeconds() / animation_time.asSeconds(),
                       finish_callback);
+    }
+
+    if (gtsam_belief.has_value()) {
+      plotEllipse(
+          &window, setAlpha(sf::Color::Yellow, 0.6), gtsam_belief.value());
     }
 
     for (int i = 0; i < num_clusters; i++) {
