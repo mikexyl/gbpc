@@ -145,7 +145,11 @@ class Gaussian {
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
     Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
                        (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
-    return Gaussian(key, mu_mix, Sigma_mix, (gauss1.N() + gauss2.N()) / 2);
+
+    size_t N1 = gauss1.N(), N2 = gauss2.N();
+    size_t weighted_N = (N1 * N1 + N2 * N2) / (N1 + N2);
+
+    return Gaussian(key, mu_mix, Sigma_mix, weighted_N);
   }
 
   void merge(const Gaussian& other) {

@@ -202,14 +202,14 @@ int main() {
   tgui::Gui gui(window);
 
   auto child = tgui::ChildWindow::create();
-  child->setClientSize({250, 120});
+  child->setClientSize({100, 120});
   child->setPosition(420, 80);
-  child->setTitle("Configurations");
+  child->setTitle("Options");
   gui.add(child);
 
   auto comboBox = tgui::ComboBox::create();
-  comboBox->setSize(120, 21);
-  comboBox->setPosition(75, 50);
+  comboBox->setSize(80, 20);
+  comboBox->setPosition(10, 10);
   comboBox->addItem("Merge");
   comboBox->addItem("MergeRobust");
   comboBox->addItem("Mixture");
@@ -217,12 +217,25 @@ int main() {
   child->add(comboBox);
 
   // add a reset button
-  auto button = tgui::Button::create();
-  button->setPosition(75, 80);
-  button->setText("Reset");
-  button->setSize(100, 30);
-  button->onPress([&var, &coverage] { var->setBelief(coverage[0]); });
-  child->add(button);
+  auto reset_button = tgui::Button::create();
+  reset_button->setPosition(10, 35);
+  reset_button->setText("Reset");
+  reset_button->setSize(80, 30);
+  reset_button->onPress([&var, &coverage] { var->setBelief(coverage[0]); });
+  child->add(reset_button);
+
+  // message box
+  tgui::MessageBox::Ptr messageBox = tgui::MessageBox::create();
+  messageBox->setText("not implemented");
+  messageBox->addButton("OK");
+  messageBox->onButtonPress([&] { messageBox->close(); });
+
+  auto gtsam_opt_button = tgui::Button::create();
+  gtsam_opt_button->setPosition(10, 70);
+  gtsam_opt_button->setText("optimize with gtsam");
+  gtsam_opt_button->setSize(80, 30);
+  gtsam_opt_button->onPress([&] { gui.add(messageBox); });
+  child->add(gtsam_opt_button);
 
   GaussianMergeType merge_type;
   auto get_merge_type = [&merge_type, &comboBox]() {
