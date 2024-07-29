@@ -7,6 +7,8 @@
 #include <gsl/gsl_vector.h>
 
 #include <SFML/Graphics.hpp>
+#include <TGUI/Backend/SFML-Graphics.hpp>
+#include <TGUI/TGUI.hpp>
 
 #include "gbpc/gbpc.h"
 #include "gbpc/visualization.h"
@@ -194,10 +196,38 @@ int main() {
       std::make_shared<Variable<Point2>>(coverage[0]));
   graph.add(prior_factor);
 
-  sf::RenderWindow window(sf::VideoMode(window_width, window_height),
+  sf::RenderWindow window({static_cast<unsigned int>(window_width),
+                           static_cast<unsigned int>(window_height)},
                           "GBP Animation");
-  // set white background
-  window.clear(sf::Color::White);
+  tgui::Gui gui(window);
+
+  auto child = tgui::ChildWindow::create();
+  child->setClientSize({250, 120});
+  child->setPosition(420, 80);
+  child->setTitle("Configurations");
+  gui.add(child);
+
+  auto comboBox = tgui::ComboBox::create();
+  comboBox->setSize(120, 21);
+  comboBox->setPosition(75,50);
+  comboBox->addItem("Merge");
+  comboBox->addItem("MergeRobust");
+  comboBox->addItem("Mixture");
+  comboBox->setSelectedItem("Merge");
+  child->add(comboBox);
+
+  GaussianMergeType merge_type;
+  auto get_merge_type = [&merge_type, &comboBox]() {
+    auto selected_item = comboBox->getSelectedItem();
+    if (selected_item == "Merge") {
+      merge_type = GaussianMergeType::Merge;
+    } else if (selected_item == "MergeRobust") {
+      merge_type = GaussianMergeType::MergeRobust;
+    } else if (selected_item == "Mixture") {
+      merge_type = GaussianMergeType::Mixture;
+    }
+    return merge_type;
+  };
 
   float freq = 30.0;
 
@@ -219,14 +249,17 @@ int main() {
     sf::Event event;
     while (window.pollEvent(event)) {
       if (event.type == sf::Event::Closed) window.close();
+      gui.handleEvent(event);  // Pass the event to the GUI
     }
     window.clear(sf::Color::White);
 
     // Get elapsed time since the last key press
     sf::Time elapsed_time = clock.getElapsedTime() - animation_start_time;
 
-    auto lambda_callback = [&prior_factor, &coverage](int active_cluster) {
-      prior_factor->update(coverage[active_cluster], GaussianMergeType::Merge);
+    auto lambda_callback = [&prior_factor, &coverage](
+                               int active_cluster,
+                               GaussianMergeType merge_type) {
+      prior_factor->update(coverage[active_cluster], merge_type);
     };
 
     // Check keyboard input with cooldown
@@ -236,8 +269,9 @@ int main() {
         active_cluster = (active_cluster - 1 + num_clusters) % num_clusters;
 
         // start animation
-        finish_callback = [&lambda_callback, active_cluster]() {
-          lambda_callback(active_cluster);
+        auto merge_type = get_merge_type();
+        finish_callback = [&lambda_callback, active_cluster, merge_type]() {
+          lambda_callback(active_cluster, merge_type);
         };
         animating = true;
         animation_start_time = clock.getElapsedTime();
@@ -266,6 +300,7 @@ int main() {
 
     plotEllipse(&window, setAlpha(colors[4], 0.6), *graph.getNode<Point2>(0));
 
+    gui.draw();  // Draw the GUI
     window.display();
 
     sf::sleep(sf::milliseconds(1000 / freq));

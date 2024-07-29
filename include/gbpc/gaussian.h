@@ -148,27 +148,38 @@ class Gaussian {
     return Gaussian(key, mu_mix, Sigma_mix, (gauss1.N() + gauss2.N()) / 2);
   }
 
+  void merge(const Gaussian& other) {
+    assert(key_ == other.key_);
+    lambda_ += other.lambda_;
+    eta_ += other.eta_;
+    N_ = (N_ + other.N_) / 2;
+
+    updateMoments();
+  }
+
   void update(const std::vector<Gaussian>& messages,
               GaussianMergeType merge_type) {
     switch (merge_type) {
-      case GaussianMergeType::Merge: {
-        auto eta = this->eta_;
-        auto lambda = this->lambda_;
-
-        for (const auto& message : messages) {
-          lambda += message.lambda_;
-          eta += message.eta_;
+      case GaussianMergeType::Merge:
+      case GaussianMergeType::MergeRobust: {
+        for (auto message : messages) {
+          if (merge_type == GaussianMergeType::MergeRobust) {
+            double hellinger = this->hellingerDistance(message);
+            message.relax(1 - hellinger);
+          }
+          this->merge(message);
         }
 
-        this->eta_ = eta;
-        this->lambda_ = lambda;
-        this->updateMoments();
       } break;
       case GaussianMergeType::Mixture: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
           *this = (mixtureGaussian(*this, message));
         }
+      } break;
+      case GaussianMergeType::Replace: {
+        auto message = messages.front();
+        *this = message;
       } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");
