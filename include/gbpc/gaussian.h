@@ -36,6 +36,7 @@ class Gaussian {
   using This = Gaussian;
 
   Gaussian() = default;
+  explicit Gaussian(Key key) : key_(key) {}
   Gaussian(const Gaussian& other) = default;
   Gaussian(Gaussian&& other) = default;
   Gaussian(Key key,
@@ -166,6 +167,13 @@ class Gaussian {
     updateMoments();
   }
 
+  void replace(const Gaussian& other) {
+    assert(key_ == other.key_);
+    mu_ = other.mu_;
+    Sigma_ = other.Sigma_;
+    N_ = other.N_;
+  }
+
   void update(const std::vector<Gaussian>& messages,
               GaussianMergeType merge_type) {
     switch (merge_type) {
@@ -174,7 +182,8 @@ class Gaussian {
         for (auto message : messages) {
           if (merge_type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
-            message.relax(1 - hellinger);
+            double k = std::max(0.1, 1 - hellinger);
+            message.relax(k);
           }
           this->merge(message);
         }
@@ -183,12 +192,12 @@ class Gaussian {
       case GaussianMergeType::Mixture: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
-          *this = (mixtureGaussian(*this, message));
+          this->replace(mixtureGaussian(*this, message));
         }
       } break;
       case GaussianMergeType::Replace: {
         auto message = messages.front();
-        *this = message;
+        this->replace(message);
       } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");
@@ -217,8 +226,60 @@ class Gaussian {
   Key key_;
 };
 
+class Node : public std::enable_shared_from_this<Node>, public Gaussian {
+ public:
+  using shared_ptr = std::shared_ptr<Node>;
+  Node() = default;
+  Node(const Key& key) : Gaussian(key) {}
+  Node(const Gaussian& initial) : Gaussian(initial) {}
+  virtual ~Node() = default;
+
+  void send(const shared_ptr& receiver) {
+    assert(messages_.size() > 0);
+
+    std::optional<Gaussian> message = priorMessage();
+
+    for (auto it = messages_.begin(); it != messages_.end(); it++) {
+      if (it->first != receiver) {
+        if (not message.has_value()) {
+          message = it->second;
+        } else {
+          message->merge(it->second);
+        }
+      }
+    }
+
+    receiver->receive(shared_from_this(), message.value());
+  }
+
+  void receive(const shared_ptr& sender, const Gaussian& message) {
+    messages_[sender] = message;
+  }
+
+  auto const& messages() const { return messages_; }
+
+  virtual std::optional<Gaussian> priorMessage() const = 0;
+
+  void clearMessages() { messages_.clear(); }
+
+  void addNeighbor(const shared_ptr& neighbor) {
+    neighbors_.emplace_back(neighbor);
+  }
+
+  auto const& neighbors() const { return neighbors_; }
+  void addNeighbors(const std::vector<shared_ptr>& neighbors) {
+    for (auto neighbor : neighbors) {
+      addNeighbor(neighbor);
+    }
+  }
+
+ protected:
+  std::map<shared_ptr, Gaussian> messages_;
+  std::vector<shared_ptr> neighbors_;
+};
+
 template <PoseConcept VALUE>
-class Belief : public Gaussian {
+class Belief : public Node {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   using This = Belief<VALUE>;
@@ -229,13 +290,20 @@ class Belief : public Gaussian {
   using Covariance = Matrix;
   using Noise = noiseModel::Gaussian;
 
-  Belief() = default;
+  Belief(const Key& key) : Node(key) {}
 
   Belief(const This& other) = default;
-  Belief(const Gaussian& other) : Gaussian(other) {}
+  Belief(const Gaussian& other) : Node(other) {}
 
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
-      : Gaussian(key, mu, Sigma, N) {}
+      : Node(Gaussian(key, mu, Sigma, N)) {}
+
+  std::optional<Gaussian> priorMessage() const override {
+    if (N_ == 0) {
+      return std::nullopt;
+    }
+    return static_cast<Gaussian>(*this);
+  }
 
   static Gaussian optimizeWithGtsam(const std::vector<This>& beliefs) {
     NonlinearFactorGraph graph;

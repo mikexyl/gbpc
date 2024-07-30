@@ -15,6 +15,7 @@ if (GBPC_BUILD_DEMO)
                 GIT_TAG v1.4.1
         )
         set(TGUI_BACKEND SFML_GRAPHICS)
+        set(TGUI_BUILD_FRAMEWORK OFF)
         FetchContent_MakeAvailable(tgui)
 
 

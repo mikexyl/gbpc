@@ -193,7 +193,8 @@ int main() {
 
   Graph graph;
   auto var = std::make_shared<Variable<Point2>>(coverage[0]);
-  auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(var);
+  auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(coverage[0]);
+  prior_factor->addAdjVar(var);
   graph.add(prior_factor);
 
   sf::RenderWindow window({static_cast<unsigned int>(window_width),
@@ -212,7 +213,7 @@ int main() {
   comboBox->setPosition(10, 10);
   comboBox->addItem("Merge");
   comboBox->addItem("MergeRobust");
-  comboBox->addItem("Mixture");
+  comboBox->addItem("Average");
   comboBox->setSelectedItem("Merge");
   child->add(comboBox);
 
@@ -250,7 +251,7 @@ int main() {
       merge_type = GaussianMergeType::Merge;
     } else if (selected_item == "MergeRobust") {
       merge_type = GaussianMergeType::MergeRobust;
-    } else if (selected_item == "Mixture") {
+    } else if (selected_item == "Average") {
       merge_type = GaussianMergeType::Mixture;
     }
     return merge_type;

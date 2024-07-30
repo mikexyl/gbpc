@@ -3,6 +3,7 @@
 
 #include "gbpc/exceptions.h"
 #include "gbpc/factor.h"
+#include "gbpc/gaussian.h"
 #include "gbpc/variable.h"
 
 using namespace gtsam;
@@ -32,17 +33,29 @@ class Graph {
     return factor;
   }
 
+  auto add(const std::vector<Factor::shared_ptr>& factors) {
+    for (auto const& factor : factors) {
+      add(factor);
+    }
+  }
+
   template <typename T>
   Belief<T>* getNode(Key key) {
     if (vars_.find(key) != vars_.end()) {
-      return static_cast<Belief<T>*>(vars_[key].get());
+      return static_cast<Variable<T>*>(vars_[key].get());
     }
 
     throw NodeNotFoundException(key);
   }
 
+  void optimize() {
+    for (auto const& factor : factors_) {
+      
+    }
+  }
+
  protected:
-  std::unordered_map<Key, Gaussian::shared_ptr> vars_;
+  std::unordered_map<Key, Node::shared_ptr> vars_;
   std::set<Factor::shared_ptr> factors_;
 };
 

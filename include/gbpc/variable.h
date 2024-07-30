@@ -9,18 +9,30 @@
 
 namespace gbpc {
 
-template <PoseConcept VALUE>
+template <typename VALUE>
 class Variable : public Belief<VALUE> {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+  using Base = Belief<VALUE>;
   using This = Variable<VALUE>;
   using shared_ptr = std::shared_ptr<This>;
-  using Belief = Belief<VALUE>;
 
-  Variable(const Belief& initial) : Belief(initial) {}
+  Variable(const Base& initial) : Base(initial) {}
 
-  void setBelief(const Belief& belief) { Belief::operator=(belief); }
+  void setBelief(const Base& belief) { Base::replace(belief); }
+
+  void update() {
+    // update belief
+    for (auto const& [_, message] : this->messages()) {
+      Base::update({message}, GaussianMergeType::MergeRobust);
+    }
+  }
+
+  void update(const std::vector<Gaussian>& messages,
+              GaussianMergeType merge_type) {
+    Base::update(messages, merge_type);
+  }
 };
 
 }  // namespace gbpc
