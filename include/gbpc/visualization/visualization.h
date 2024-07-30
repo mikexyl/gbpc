@@ -49,7 +49,9 @@ plotEllipse(const Eigen::Matrix2d& cov, double mean_x, double mean_y) {
   return {x, y};
 }
 
-inline void createWindow(sf::RenderWindow* window, tgui::Gui* gui) {
+inline void createWindow(sf::RenderWindow* window,
+                         tgui::Gui* gui,
+                         std::function<void()> onGtsam) {
   window->create(sf::VideoMode(800, 600), "GBPC Visualization");
   gui->setWindow(*window);
 
@@ -85,7 +87,7 @@ inline void createWindow(sf::RenderWindow* window, tgui::Gui* gui) {
   gtsam_opt_button->setPosition(10, 70);
   gtsam_opt_button->setText("optimize with gtsam");
   gtsam_opt_button->setSize(80, 30);
-  gtsam_opt_button->onPress([&] { gui->add(messageBox); });
+  gtsam_opt_button->onPress([&] { onGtsam(); });
   child->add(gtsam_opt_button);
 }
 

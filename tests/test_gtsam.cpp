@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
     Eigen::Matrix2d cov = Eigen::Matrix2d::Identity();
     cov << 20, 0, 0, 20;
     cov *= cov;
-    gbpc::Belief<Point2> measured(i + 10, Point2(-50, -50), cov, 1);
+    gbpc::Belief<Point2> measured(i + 10, Point2(50, 50), cov, 1);
     auto factor = std::make_shared<gbpc::BetweenFactor<Point2>>(measured);
     factor->addAdjVar({variables[i], variables[i + 1]});
     graph.add(factor);
@@ -38,14 +38,15 @@ int main(int argc, char** argv) {
 
   auto prior_factor =
       std::make_shared<gbpc::PriorFactor<Point2>>(gbpc::Belief<Point2>(
-          20, Point2(100, 100), Eigen::Matrix2d::Identity()*400, 100));
+          20, Point2(100, 100), Eigen::Matrix2d::Identity() * 400, 100));
   prior_factor->addAdjVar(variables[0]);
   graph.add(prior_factor);
 
   sf::RenderWindow window;
   tgui::Gui gui;
 
-  gbpc::visualization::createWindow(&window, &gui);
+  gbpc::visualization::createWindow(
+      &window, &gui, [&graph]() { graph.solveByGtsam(); });
   sf::Clock clock;
   sf::Time press_time = sf::seconds(0.5f);  // Set cooldown time to 0.5 seconds
   sf::Time last_press_time = sf::Time::Zero;

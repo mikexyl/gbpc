@@ -88,11 +88,30 @@ class Graph {
     for (auto const& [_, var] : vars_) {
       var->update();
     }
-
   }
 
   auto const& vars() const { return vars_; }
   auto const& factors() const { return factors_; }
+  void solveByGtsam() {
+    NonlinearFactorGraph graph;
+    Values values;
+
+    for (auto const& factor : factors_) {
+      auto gtsam = factor->gtsam();
+      graph.add(*gtsam.first);
+      values.insert_or_assign(*gtsam.second);
+    }
+
+    LevenbergMarquardtOptimizer optimizer(graph, values);
+    auto result = optimizer.optimize();
+
+    Marginals marginals(graph, result);
+    for (auto const& [key, value] : result) {
+      auto mu = traits<Point2>::Logmap(value.cast<Point2>());
+      auto sigma = marginals.marginalCovariance(key);
+      vars_[key]->replace(Gaussian(key, mu, sigma, 1));
+    }
+  }
 
  protected:
   std::unordered_map<Key, Node::shared_ptr> vars_;

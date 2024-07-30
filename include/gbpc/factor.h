@@ -1,6 +1,8 @@
 #ifndef GBPC_FACTOR_H_
 #define GBPC_FACTOR_H_
 
+#include <gtsam/slam/dataset.h>
+
 #include <Eigen/Eigen>
 
 #include "gbpc/gaussian.h"
@@ -42,6 +44,8 @@ class Factor : public Node {
     return keys;
   }
 
+  virtual gtsam::GraphAndValues gtsam() = 0;
+
  protected:
   Key factor_key_;
 };
@@ -71,11 +75,7 @@ class BetweenFactor : public Factor {
     return static_cast<Variable<VALUE>*>(adj_vars()[1].get());
   }
 
-  VALUE constructFromVector(const Eigen::VectorXd& vec) {
-    throw "Not implemented";
-  }
-
-  std::optional<Gaussian> potential(const Node::shared_ptr& var) {
+  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
     assert(var == adj_vars()[0] || var == adj_vars()[1]);
 
     if (var == adj_vars()[0]) {
@@ -93,6 +93,25 @@ class BetweenFactor : public Factor {
     }
 
     return std::nullopt;
+  }
+
+  gtsam::GraphAndValues gtsam() override {
+    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
+    auto g0 = traits<VALUE>::Expmap(this->mu());
+    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
+
+    typename gtsam::BetweenFactor<VALUE>::shared_ptr factor(
+        new gtsam::BetweenFactor<VALUE>(
+            var1()->key(), var2()->key(), g0, noise));
+    graph->push_back(factor);
+
+    Values::shared_ptr values(new Values());
+    auto value1 = traits<VALUE>::Expmap(var1()->mu());
+    auto value2 = traits<VALUE>::Expmap(var2()->mu());
+    values->insert(var1()->key(), value1);
+    values->insert(var2()->key(), value2);
+
+    return {graph, values};
   }
 };
 
@@ -139,6 +158,22 @@ class PriorFactor : public Factor {
        << var()->Sigma().diagonal().transpose();
 
     return ss.str();
+  }
+
+  gtsam::GraphAndValues gtsam() override {
+    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
+
+    auto g0 = traits<VALUE>::Expmap(this->mu());
+    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
+    typename gtsam::PriorFactor<VALUE>::shared_ptr prior(
+        new gtsam::PriorFactor<VALUE>(var()->key(), g0, noise));
+    graph->push_back(prior);
+
+    Values::shared_ptr values(new Values());
+    auto value = traits<VALUE>::Expmap(this->mu());
+    values->insert(var()->key(), value);
+
+    return {graph, values};
   }
 };
 
