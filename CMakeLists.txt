@@ -13,25 +13,18 @@ endif()
 add_definitions(-march=native)
 add_compile_options(-Wno-sign-compare)
 
-# find eigen
 find_package(Eigen3 REQUIRED)
+find_package(GTSAM REQUIRED)
+find_package(TBB REQUIRED)
 
-# find GTSAM, if not found, fetch it
-find_package(GTSAM QUIET)
-if(NOT GTSAM_FOUND)
-    include(FetchContent)
-    FetchContent_Declare(
-            GTSAM
-            GIT_REPOSITORY https://github.com/borglab/gtsam.git
-            GIT_TAG 4.2)
-
-    # Set GTSAM options before fetching
-    set(GTSAM_POSE3_EXPMAP ON)
-    set(GTSAM_ROT3_EXPMAP ON)
-    set(GTSAM_USE_SYSTEM_EIGEN ON)
-
-    FetchContent_MakeAvailable(GTSAM)
-endif()
+find_package(GSL REQUIRED)
+include(FetchContent)
+FetchContent_Declare(
+matplotplusplus
+GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus.git
+GIT_TAG v1.2.1
+)
+FetchContent_MakeAvailable(matplotplusplus)
 
 set(INCLUDES
         PUBLIC
@@ -44,10 +37,12 @@ set(DEPENDENCIES
         PUBLIC
         Eigen3::Eigen
         gtsam
+        TBB::tbb
+        GSL::gsl
 )
 
 add_library(gbpc SHARED
-        src/main.cpp)
+        src/gaussian.cpp)
 target_include_directories(gbpc
         ${INCLUDES})
 target_link_libraries(gbpc
