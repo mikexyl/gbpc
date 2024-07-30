@@ -48,11 +48,51 @@ class Graph {
     throw NodeNotFoundException(key);
   }
 
-  void optimize() {
+  std::string print() {
+    std::stringstream ss;
+    ss << "Graph:" << std::endl;
+    ss << "Variables:" << std::endl;
+    for (auto const& [_, var] : vars_) {
+      ss << var->print() << std::endl;
+    }
+
+    ss << "Factors:" << std::endl;
     for (auto const& factor : factors_) {
-      
+      ss << factor->print() << std::endl;
+    }
+
+    return ss.str();
+  }
+
+  void clearFactorMessages() {
+    for (auto const& factor : factors_) {
+      factor->clearMessages();
     }
   }
+
+  void clearVariableMessages() {
+    for (auto const& [_, var] : vars_) {
+      var->clearMessages();
+    }
+  }
+
+  void optimize() {
+    for (auto const& factor : factors_) {
+      factor->send();
+    }
+
+    for (auto const& [_, var] : vars_) {
+      var->send();
+    }
+
+    for (auto const& [_, var] : vars_) {
+      var->update();
+    }
+
+  }
+
+  auto const& vars() const { return vars_; }
+  auto const& factors() const { return factors_; }
 
  protected:
   std::unordered_map<Key, Node::shared_ptr> vars_;

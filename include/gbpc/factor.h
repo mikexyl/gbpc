@@ -42,14 +42,16 @@ class Factor : public Node {
     return keys;
   }
 
-  std::optional<Gaussian> priorMessage() const override { return std::nullopt; }
-
  protected:
   Key factor_key_;
 };
 
 template <class VALUE>
 class BetweenFactor : public Factor {
+  // Check that VALUE type is a testable Lie group
+  BOOST_CONCEPT_ASSERT((IsTestable<VALUE>));
+  BOOST_CONCEPT_ASSERT((IsLieGroup<VALUE>));
+
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -68,9 +70,33 @@ class BetweenFactor : public Factor {
   Variable<VALUE>* var2() {
     return static_cast<Variable<VALUE>*>(adj_vars()[1].get());
   }
+
+  VALUE constructFromVector(const Eigen::VectorXd& vec) {
+    throw "Not implemented";
+  }
+
+  std::optional<Gaussian> potential(const Node::shared_ptr& var) {
+    assert(var == adj_vars()[0] || var == adj_vars()[1]);
+
+    if (var == adj_vars()[0]) {
+      Gaussian message(*this);
+      message.merge(*adj_vars()[1], false);
+      return message;
+    } else if (var == adj_vars()[1]) {
+      auto measured = traits<VALUE>::Expmap(this->mu());
+      auto inverse = traits<VALUE>::Inverse(measured);
+      auto inverse_mu = traits<VALUE>::Logmap(inverse);
+      Gaussian inverse_message(
+          this->key(), inverse_mu, this->Sigma(), this->N());
+      inverse_message.merge(*adj_vars()[1], false);
+      return inverse_message;
+    }
+
+    return std::nullopt;
+  }
 };
 
-template <PoseConcept VALUE>
+template <class VALUE>
 class PriorFactor : public Factor {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -89,6 +115,16 @@ class PriorFactor : public Factor {
     return static_cast<Variable<VALUE>*>(adj_vars()[0].get());
   }
 
+  Gaussian* varAsGaussian() {
+    return static_cast<Gaussian*>(adj_vars()[0].get());
+  }
+
+  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
+    throw "should never be called";
+  }
+
+  Gaussian prior() const override { return static_cast<Gaussian>(*this); }
+
   std::string update(const Gaussian& message, GaussianMergeType merge_type) {
     std::stringstream ss;
     ss << "Factor::update: \n"
@@ -97,7 +133,7 @@ class PriorFactor : public Factor {
        << "  " << message.mu().transpose() << " : "
        << message.Sigma().diagonal().transpose() << " = ";
 
-    var()->update({message}, merge_type);
+    varAsGaussian()->update({message}, merge_type);
 
     ss << var()->mu().transpose() << " : "
        << var()->Sigma().diagonal().transpose();

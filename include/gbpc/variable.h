@@ -21,18 +21,6 @@ class Variable : public Belief<VALUE> {
   Variable(const Base& initial) : Base(initial) {}
 
   void setBelief(const Base& belief) { Base::replace(belief); }
-
-  void update() {
-    // update belief
-    for (auto const& [_, message] : this->messages()) {
-      Base::update({message}, GaussianMergeType::MergeRobust);
-    }
-  }
-
-  void update(const std::vector<Gaussian>& messages,
-              GaussianMergeType merge_type) {
-    Base::update(messages, merge_type);
-  }
 };
 
 }  // namespace gbpc

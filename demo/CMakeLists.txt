@@ -1,23 +1,5 @@
-option(GBPC_BUILD_DEMO "Build demo" ON)
-
-if (GBPC_BUILD_DEMO)
-        FetchContent_Declare(
-                SFML
-                GIT_REPOSITORY https://github.com/SFML/SFML.git
-                GIT_TAG 2.6.1  # Use the desired version or branch
-        )
-        FetchContent_MakeAvailable(SFML)
-
-    # fetch tgui
-        FetchContent_Declare(
-                tgui
-                GIT_REPOSITORY https://github.com/texus/TGUI.git
-                GIT_TAG v1.4.1
-        )
-        set(TGUI_BACKEND SFML_GRAPHICS)
-        set(TGUI_BUILD_FRAMEWORK OFF)
-        FetchContent_MakeAvailable(tgui)
-
+if (GBPC_BUILD_TESTS)
+    
 
     add_executable(demo
             demo.cpp)
@@ -36,6 +18,7 @@ if (GBPC_BUILD_DEMO)
         target_include_directories(tgui_example
         PRIVATE
         ${INCLUDES})
+
         target_link_libraries(tgui_example
         PRIVATE
         sfml-graphics sfml-window sfml-system
