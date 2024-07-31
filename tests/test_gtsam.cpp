@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < num_nodes; i++) {
     init.emplace_back(gbpc::Belief<Point2>(i,
                                            Point2(i * 100 + 100, i * 100 + 100),
-                                           Eigen::Matrix2d::Identity() * 10000,
+                                           Eigen::Matrix2d::Identity() * 100,
                                            0));
   }
 
@@ -38,15 +38,18 @@ int main(int argc, char** argv) {
 
   auto prior_factor =
       std::make_shared<gbpc::PriorFactor<Point2>>(gbpc::Belief<Point2>(
-          20, Point2(100, 100), Eigen::Matrix2d::Identity() * 400, 100));
+          20, Point2(100, 100), Eigen::Matrix2d::Identity() * 100, 100));
   prior_factor->addAdjVar(variables[0]);
   graph.add(prior_factor);
+
+  std::vector<gbpc::Gaussian> gtsam_results;
 
   sf::RenderWindow window;
   tgui::Gui gui;
 
-  gbpc::visualization::createWindow(
-      &window, &gui, [&graph]() { graph.solveByGtsam(); });
+  gbpc::visualization::createWindow(&window, &gui, [&graph, &gtsam_results]() {
+    gtsam_results = graph.solveByGtsam();
+  });
   sf::Clock clock;
   sf::Time press_time = sf::seconds(0.5f);  // Set cooldown time to 0.5 seconds
   sf::Time last_press_time = sf::Time::Zero;
@@ -86,6 +89,13 @@ int main(int argc, char** argv) {
             *(factor->adj_vars()[0]),
             *(factor->adj_vars()[1]));
       }
+    }
+
+    for (auto const& gaussian : gtsam_results) {
+      gbpc::visualization::plotEllipse(
+          &window,
+          gbpc::visualization::setAlpha(sf::Color::Yellow, 0.3),
+          gaussian);
     }
 
     gui.draw();  // Draw all widgets

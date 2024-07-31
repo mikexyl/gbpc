@@ -80,7 +80,7 @@ class BetweenFactor : public Factor {
 
     if (var == adj_vars()[0]) {
       Gaussian message(*this);
-      message.merge(*adj_vars()[1], false);
+      message.merge(*adj_vars()[0], false);
       return message;
     } else if (var == adj_vars()[1]) {
       auto measured = traits<VALUE>::Expmap(this->mu());

@@ -88,11 +88,14 @@ class Graph {
     for (auto const& [_, var] : vars_) {
       var->update();
     }
+
+    clearFactorMessages();
+    clearVariableMessages();
   }
 
   auto const& vars() const { return vars_; }
   auto const& factors() const { return factors_; }
-  void solveByGtsam() {
+  std::vector<Gaussian> solveByGtsam() {
     NonlinearFactorGraph graph;
     Values values;
 
@@ -104,13 +107,16 @@ class Graph {
 
     LevenbergMarquardtOptimizer optimizer(graph, values);
     auto result = optimizer.optimize();
-
     Marginals marginals(graph, result);
+
+    std::vector<Gaussian> gaussians;
     for (auto const& [key, value] : result) {
       auto mu = traits<Point2>::Logmap(value.cast<Point2>());
       auto sigma = marginals.marginalCovariance(key);
-      vars_[key]->replace(Gaussian(key, mu, sigma, 1));
+      gaussians.emplace_back(key, mu, sigma, 1);
     }
+
+    return gaussians;
   }
 
  protected:

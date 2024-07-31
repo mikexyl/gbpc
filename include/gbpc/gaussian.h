@@ -207,7 +207,7 @@ class Gaussian {
         for (auto message : messages) {
           if (merge_type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
-            double k = std::max(0.04, 1 - hellinger);
+            double k = std::max(0.1, 1 - hellinger);
             message.relax(k);
           }
           this->merge(message);
