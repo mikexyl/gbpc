@@ -435,10 +435,13 @@ int main(int argc, char* argv[]) {
 
   window.addButtonActions("Toggle Loop",
                           [&graph, &loop_factors](QPushButton* button) {
+                            button->setCheckable(true);
                             if (graph->hasAny(loop_factors)) {
                               graph->remove(loop_factors);
+                              button->setChecked(false);
                             } else {
                               graph->add(loop_factors);
+                              button->setChecked(true);
                             }
                           });
 
@@ -466,11 +469,11 @@ int main(int argc, char* argv[]) {
   window.addButtonActions(
       "Toggle Animation",
       [&show_animation](QPushButton* button) {
+        button->setCheckable(true);
         show_animation = not show_animation;
-        button->setText(QString::fromStdString("Toggle Animation " +
-                                               std::to_string(show_animation)));
+        button->setChecked(show_animation);
       },
-      "Toggle Animation " + std::to_string(show_animation));
+      "Toggle Animation");
 
   // full screen
   window.showMaximized();
