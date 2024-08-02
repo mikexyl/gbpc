@@ -1,7 +1,11 @@
 #ifndef GBPC_FACTOR_H_
 #define GBPC_FACTOR_H_
 
+#include <gtsam/slam/dataset.h>
+
 #include <Eigen/Eigen>
+#include <boost/concept_check.hpp>
+#include <memory>
 
 #include "gbpc/gaussian.h"
 #include "gbpc/variable.h"
@@ -10,8 +14,6 @@ namespace gbpc {
 
 class Factor : public Node {
  public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
   using shared_ptr = std::shared_ptr<Factor>;
 
   Factor(const Gaussian& measured) : Node(measured) {}
@@ -42,7 +44,7 @@ class Factor : public Node {
     return keys;
   }
 
-  std::optional<Gaussian> priorMessage() const override { return std::nullopt; }
+  virtual gtsam::GraphAndValues gtsam() = 0;
 
  protected:
   Key factor_key_;
@@ -50,6 +52,10 @@ class Factor : public Node {
 
 template <class VALUE>
 class BetweenFactor : public Factor {
+  // Check that VALUE type is a testable Lie group
+  BOOST_CONCEPT_ASSERT((IsTestable<VALUE>));
+  BOOST_CONCEPT_ASSERT((IsLieGroup<VALUE>));
+
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -68,9 +74,48 @@ class BetweenFactor : public Factor {
   Variable<VALUE>* var2() {
     return static_cast<Variable<VALUE>*>(adj_vars()[1].get());
   }
+
+  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
+    assert(var == adj_vars()[0] || var == adj_vars()[1]);
+
+    if (var == adj_vars()[0]) {
+      Gaussian message(*this);
+      message.merge(*adj_vars()[0], false);
+      return message;
+    } else if (var == adj_vars()[1]) {
+      auto measured = traits<VALUE>::Expmap(this->mu());
+      auto inverse = traits<VALUE>::Inverse(measured);
+      auto inverse_mu = traits<VALUE>::Logmap(inverse);
+      Gaussian inverse_message(
+          this->key(), inverse_mu, this->Sigma(), this->N());
+      inverse_message.merge(*adj_vars()[1], false);
+      return inverse_message;
+    }
+
+    return std::nullopt;
+  }
+
+  gtsam::GraphAndValues gtsam() override {
+    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
+    auto g0 = traits<VALUE>::Expmap(this->mu());
+    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
+
+    typename gtsam::BetweenFactor<VALUE>::shared_ptr factor(
+        new gtsam::BetweenFactor<VALUE>(
+            var1()->key(), var2()->key(), g0, noise));
+    graph->push_back(factor);
+
+    Values::shared_ptr values(new Values());
+    auto value1 = traits<VALUE>::Expmap(var1()->mu());
+    auto value2 = traits<VALUE>::Expmap(var2()->mu());
+    values->insert(var1()->key(), value1);
+    values->insert(var2()->key(), value2);
+
+    return {graph, values};
+  }
 };
 
-template <PoseConcept VALUE>
+template <class VALUE>
 class PriorFactor : public Factor {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -89,6 +134,16 @@ class PriorFactor : public Factor {
     return static_cast<Variable<VALUE>*>(adj_vars()[0].get());
   }
 
+  Gaussian* varAsGaussian() {
+    return static_cast<Gaussian*>(adj_vars()[0].get());
+  }
+
+  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
+    throw "should never be called";
+  }
+
+  Gaussian prior() const override { return static_cast<Gaussian>(*this); }
+
   std::string update(const Gaussian& message, GaussianMergeType merge_type) {
     std::stringstream ss;
     ss << "Factor::update: \n"
@@ -97,12 +152,28 @@ class PriorFactor : public Factor {
        << "  " << message.mu().transpose() << " : "
        << message.Sigma().diagonal().transpose() << " = ";
 
-    var()->update({message}, merge_type);
+    varAsGaussian()->update({message}, merge_type);
 
     ss << var()->mu().transpose() << " : "
        << var()->Sigma().diagonal().transpose();
 
     return ss.str();
+  }
+
+  gtsam::GraphAndValues gtsam() override {
+    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
+
+    auto g0 = traits<VALUE>::Expmap(this->mu());
+    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
+    typename gtsam::PriorFactor<VALUE>::shared_ptr prior(
+        new gtsam::PriorFactor<VALUE>(var()->key(), g0, noise));
+    graph->push_back(prior);
+
+    Values::shared_ptr values(new Values());
+    auto value = traits<VALUE>::Expmap(this->mu());
+    values->insert(var()->key(), value);
+
+    return {graph, values};
   }
 };
 

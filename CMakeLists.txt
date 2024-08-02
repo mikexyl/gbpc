@@ -10,6 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 add_definitions(-march=native)
 add_compile_options(-Wno-sign-compare)
 
@@ -19,12 +21,8 @@ find_package(TBB REQUIRED)
 
 find_package(GSL REQUIRED)
 include(FetchContent)
-FetchContent_Declare(
-matplotplusplus
-GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus.git
-GIT_TAG v1.2.1
-)
-FetchContent_MakeAvailable(matplotplusplus)
+
+find_package(Matplot++ REQUIRED)
 
 set(INCLUDES
         PUBLIC
@@ -42,7 +40,8 @@ set(DEPENDENCIES
 )
 
 add_library(gbpc SHARED
-        src/gaussian.cpp)
+        src/gaussian.cpp
+        src/gbpc.cpp)
 target_include_directories(gbpc
         ${INCLUDES})
 target_link_libraries(gbpc

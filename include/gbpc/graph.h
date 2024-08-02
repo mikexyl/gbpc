@@ -48,10 +48,75 @@ class Graph {
     throw NodeNotFoundException(key);
   }
 
+  std::string print() {
+    std::stringstream ss;
+    ss << "Graph:" << std::endl;
+    ss << "Variables:" << std::endl;
+    for (auto const& [_, var] : vars_) {
+      ss << var->print() << std::endl;
+    }
+
+    ss << "Factors:" << std::endl;
+    for (auto const& factor : factors_) {
+      ss << factor->print() << std::endl;
+    }
+
+    return ss.str();
+  }
+
+  void clearFactorMessages() {
+    for (auto const& factor : factors_) {
+      factor->clearMessages();
+    }
+  }
+
+  void clearVariableMessages() {
+    for (auto const& [_, var] : vars_) {
+      var->clearMessages();
+    }
+  }
+
   void optimize() {
     for (auto const& factor : factors_) {
-      
+      factor->send();
     }
+
+    for (auto const& [_, var] : vars_) {
+      var->send();
+    }
+
+    for (auto const& [_, var] : vars_) {
+      var->update();
+    }
+
+    clearFactorMessages();
+    clearVariableMessages();
+  }
+
+  auto const& vars() const { return vars_; }
+  auto const& factors() const { return factors_; }
+  std::vector<Gaussian> solveByGtsam() {
+    NonlinearFactorGraph graph;
+    Values values;
+
+    for (auto const& factor : factors_) {
+      auto gtsam = factor->gtsam();
+      graph.add(*gtsam.first);
+      values.insert_or_assign(*gtsam.second);
+    }
+
+    LevenbergMarquardtOptimizer optimizer(graph, values);
+    auto result = optimizer.optimize();
+    Marginals marginals(graph, result);
+
+    std::vector<Gaussian> gaussians;
+    for (auto const& [key, value] : result) {
+      auto mu = traits<Point2>::Logmap(value.cast<Point2>());
+      auto sigma = marginals.marginalCovariance(key);
+      gaussians.emplace_back(key, mu, sigma, 1);
+    }
+
+    return gaussians;
   }
 
  protected:

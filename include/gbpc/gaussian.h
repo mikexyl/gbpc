@@ -20,10 +20,6 @@ class NoiseModelValue {};
 
 using namespace gtsam;
 
-template <typename T>
-concept PoseConcept = std::same_as<T, Pose3> || std::same_as<T, Pose2> ||
-                      std::same_as<T, Point2> || std::same_as<T, Point3>;
-
 namespace gbpc {
 
 enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
@@ -35,7 +31,7 @@ class Gaussian {
   using Matrix = Eigen::MatrixXd;
   using This = Gaussian;
 
-  Gaussian() = default;
+  Gaussian() : N_(0) {}
   explicit Gaussian(Key key) : key_(key) {}
   Gaussian(const Gaussian& other) = default;
   Gaussian(Gaussian&& other) = default;
@@ -63,8 +59,10 @@ class Gaussian {
   Matrix Sigma() const { return Sigma_; }
   Matrix Lambda() const { return lambda_; }
   Key key() const { return key_; }
+  Key& key() { return key_; }
 
   Gaussian& operator=(const Gaussian& other) {
+    key_ = other.key_;
     mu_ = other.mu_;
     eta_ = other.eta_;
     Sigma_ = other.Sigma_;
@@ -130,16 +128,25 @@ class Gaussian {
 
   static Gaussian mixtureGaussian(const Gaussian& gauss1,
                                   const Gaussian& gauss2,
-                                  std::optional<double> force_alpha = 0.5) {
-    assert(gauss1.key() == gauss2.key());
+                                  std::optional<double> force_alpha = 0.5,
+                                  bool expect_same_key = true) {
+    if (expect_same_key) {
+      assert(gauss1.key() == gauss2.key());
+    } else {
+      assert(gauss1.key() != gauss2.key());
+    }
     uint64_t key = gauss1.key();
 
     double alpha;
     if (force_alpha.has_value()) {
       alpha = force_alpha.value();
     } else {
-      if (gauss1.N() == 0 or gauss2.N() == 0) {
+      if (gauss1.N() == 0 and gauss2.N() == 0) {
         throw std::runtime_error("N is zero");
+      } else if (gauss1.N() == 0) {
+        return gauss2;
+      } else if (gauss2.N() == 0) {
+        return gauss1;
       }
       alpha = static_cast<double>(gauss1.N()) / (gauss1.N() + gauss2.N());
     }
@@ -158,21 +165,39 @@ class Gaussian {
     return Gaussian(key, mu_mix, Sigma_mix, weighted_N);
   }
 
-  void merge(const Gaussian& other) {
-    assert(key_ == other.key_);
+  void merge(const Gaussian& other, bool expect_same_key = true) {
+    if (N_ == 0) {
+      return this->replace(other);
+    }
+
+    if (expect_same_key) {
+      assert(key_ == other.key_);
+    } else {
+      assert(key_ != other.key_);
+    }
+
+    // check size of the matrices
+    assert(mu_.size() == other.mu_.size());
+    assert(Sigma_.size() == other.Sigma_.size());
+    assert(lambda_.size() == other.lambda_.size());
+    assert(eta_.size() == other.eta_.size());
+
     lambda_ += other.lambda_;
     eta_ += other.eta_;
-    N_ = (N_ + other.N_) / 2;
+    N_ = std::min(N_, other.N_);
+    N_++;
 
     updateMoments();
   }
 
-  void replace(const Gaussian& other) {
-    assert(key_ == other.key_);
-    mu_ = other.mu_;
-    Sigma_ = other.Sigma_;
-    N_ = other.N_;
+  bool equalSize(const Gaussian& other) const {
+    return mu_.size() == other.mu_.size() &&
+           Sigma_.size() == other.Sigma_.size() &&
+           lambda_.size() == other.lambda_.size() &&
+           eta_.size() == other.eta_.size();
   }
+
+  void replace(const Gaussian& other) { *this = other; }
 
   void update(const std::vector<Gaussian>& messages,
               GaussianMergeType merge_type) {
@@ -219,6 +244,8 @@ class Gaussian {
     return os;
   }
 
+  bool empty() const { return mu_.size() == 0; }
+
  protected:
   Eigen::VectorXd mu_, eta_;
   Eigen::MatrixXd Sigma_, lambda_;
@@ -234,31 +261,46 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Node(const Gaussian& initial) : Gaussian(initial) {}
   virtual ~Node() = default;
 
+  void send() {
+    for (auto neighbor : neighbors_) {
+      send(neighbor);
+    }
+  }
+
   void send(const shared_ptr& receiver) {
-    assert(messages_.size() > 0);
+    Gaussian message(this->prior());
 
-    std::optional<Gaussian> message = priorMessage();
-
-    for (auto it = messages_.begin(); it != messages_.end(); it++) {
-      if (it->first != receiver) {
-        if (not message.has_value()) {
-          message = it->second;
-        } else {
-          message->merge(it->second);
+    for (auto it = neighbors_.begin(); it != neighbors_.end(); it++) {
+      if (*it != receiver) {
+        if (auto potential = this->potential(*it)) {
+          message.merge(*potential);
+        }
+        if (messages_.find(*it) != messages_.end()) {
+          message.merge(messages_[*it]);
         }
       }
     }
 
-    receiver->receive(shared_from_this(), message.value());
+    if (message.empty()) {
+      return;
+    }
+
+    message.key() = receiver->key();
+    receiver->receive(shared_from_this(), message);
   }
 
   void receive(const shared_ptr& sender, const Gaussian& message) {
+    assert(message.key() == this->key_);
     messages_[sender] = message;
+    assert(messages_[sender].key() == this->key_);
   }
 
   auto const& messages() const { return messages_; }
 
-  virtual std::optional<Gaussian> priorMessage() const = 0;
+  virtual Gaussian prior() const { return Gaussian(); }
+
+  virtual std::optional<Gaussian> potential(
+      const shared_ptr& node = nullptr) = 0;
 
   void clearMessages() { messages_.clear(); }
 
@@ -273,12 +315,20 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     }
   }
 
+  void update() {
+    // update belief
+    for (auto const& [_, message] : messages_) {
+      assert(message.key() == this->key_);
+      this->Gaussian::update({message}, GaussianMergeType::MergeRobust);
+    }
+  }
+
  protected:
   std::map<shared_ptr, Gaussian> messages_;
   std::vector<shared_ptr> neighbors_;
 };
 
-template <PoseConcept VALUE>
+template <class VALUE>
 class Belief : public Node {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -298,11 +348,9 @@ class Belief : public Node {
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
       : Node(Gaussian(key, mu, Sigma, N)) {}
 
-  std::optional<Gaussian> priorMessage() const override {
-    if (N_ == 0) {
-      return std::nullopt;
-    }
-    return static_cast<Gaussian>(*this);
+  virtual std::optional<Gaussian> potential(
+      const Node::shared_ptr& node = nullptr) override {
+    return std::nullopt;
   }
 
   static Gaussian optimizeWithGtsam(const std::vector<This>& beliefs) {

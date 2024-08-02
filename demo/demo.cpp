@@ -11,7 +11,7 @@
 #include <TGUI/TGUI.hpp>
 
 #include "gbpc/gbpc.h"
-#include "gbpc/visualization.h"
+#include "gbpc/visualization/visualization.h"
 #include "utils.h"
 
 using namespace gbpc;
