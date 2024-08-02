@@ -568,11 +568,11 @@ int main(int argc, char* argv[]) {
 
   window.addButtonActions(
       "Optimize Roots", [&graph, &window](QPushButton* button) {
-        graph->optimizeRoots();
-
-        // message box
-        QString message = "Optimize Roots Not Implemented";
-        QMessageBox::information(&window, "Optimize Roots", message);
+        try {
+          graph->optimizeRoots();
+        } catch (const std::exception& e) {
+          QMessageBox::information(&window, "Optimize Roots", e.what());
+        }
       });
 
   window.addButtonActions(

@@ -190,11 +190,11 @@ class Graph {
   }
 
   auto buildBayesTree() {
-    auto const& [graph, values] = toGtsam();
+    std::tie(graph_, values_) = toGtsam();
 
     // Step 4: Linearize the graph around the result to get a
     // GaussianFactorGraph
-    GaussianFactorGraph::shared_ptr linearGraph = graph->linearize(*values);
+    GaussianFactorGraph::shared_ptr linearGraph = graph_->linearize(*values_);
 
     // Step 5: Create an ordering for variable elimination
     Ordering ordering = Ordering::Colamd(*linearGraph);
@@ -204,15 +204,15 @@ class Graph {
         linearGraph->eliminateSequential(ordering);
 
     // Step 7: Convert the Bayes Net to a Bayes Tree
-    GaussianBayesTree::shared_ptr bayesTree =
-        linearGraph->eliminateMultifrontal(ordering);
+    bayes_tree_ = linearGraph->eliminateMultifrontal(ordering);
 
     cliques_.clear();
-    for (auto const& [clique_key, clique] : bayesTree->nodes()) {
+    for (auto const& [clique_key, clique] : bayes_tree_->nodes()) {
       cliques_.insert(fromClique(clique));
+      clique->conditional()->print();
     }
 
-    return bayesTree;
+    return bayes_tree_;
   }
 
   GBPClique::shared_ptr fromClique(
@@ -225,7 +225,9 @@ class Graph {
   }
 
   Graph::shared_ptr solveByGtsam() {
-    auto const& [graph, values] = toGtsam();
+    std::tie(graph_, values_) = toGtsam();
+    auto graph = graph_;
+    auto values = values_;
 
     LevenbergMarquardtOptimizer optimizer(*graph, *values);
     auto result = optimizer.optimize();
@@ -249,12 +251,31 @@ class Graph {
 
   auto const& cliques() const { return cliques_; }
 
-  void optimizeRoots() {}
+  bool optimizeRoots() {
+    if (bayes_tree_ == nullptr) {
+      throw std::runtime_error("Bayes tree is not built");
+    }
+    auto delta = bayes_tree_->optimize();
+
+    auto estimate = values_->retract(delta);
+
+    for (auto const& [key, value] : estimate) {
+      // auto cov = bayes_tree_->marginalCovariance(key);
+      auto cov = vars_[key]->Sigma();
+      auto gaussian = Gaussian(key, value.cast<Point2>(), cov, 1);
+      vars_[key]->replace(gaussian);
+    }
+
+    return true;
+  }
 
  protected:
   std::unordered_map<Key, Node::shared_ptr> vars_;
   std::set<Factor::shared_ptr> factors_;
   std::set<GBPClique::shared_ptr> cliques_;
+  GaussianBayesTree::shared_ptr bayes_tree_{nullptr};
+  NonlinearFactorGraph::shared_ptr graph_{nullptr};
+  Values::shared_ptr values_{nullptr};
 };
 
 }  // namespace gbpc
