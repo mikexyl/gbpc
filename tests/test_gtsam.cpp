@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
   prior_factor->addAdjVar(variables[0]);
   graph.add(prior_factor);
 
-  std::vector<gbpc::Gaussian> gtsam_results;
+  gbpc::Graph::shared_ptr gtsam_results;
 
   sf::RenderWindow window;
   tgui::Gui gui;
@@ -91,11 +91,11 @@ int main(int argc, char** argv) {
       }
     }
 
-    for (auto const& gaussian : gtsam_results) {
+    for (auto const& [_, gaussian] : gtsam_results->vars()) {
       gbpc::visualization::plotEllipse(
           &window,
           gbpc::visualization::setAlpha(sf::Color::Yellow, 0.3),
-          gaussian);
+          *gaussian);
     }
 
     gui.draw();  // Draw all widgets

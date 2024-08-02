@@ -21,6 +21,8 @@ struct GaussianKeyCompare {
 
 class Graph {
  public:
+  using shared_ptr = std::shared_ptr<Graph>;
+
   Graph() = default;
 
   auto add(const Factor::shared_ptr& factor) {
@@ -95,7 +97,7 @@ class Graph {
 
   auto const& vars() const { return vars_; }
   auto const& factors() const { return factors_; }
-  std::vector<Gaussian> solveByGtsam() {
+  Graph::shared_ptr solveByGtsam() {
     NonlinearFactorGraph graph;
     Values values;
 
@@ -116,7 +118,13 @@ class Graph {
       gaussians.emplace_back(key, mu, sigma, 1);
     }
 
-    return gaussians;
+    Graph::shared_ptr gbp_graph(new Graph);
+    for (auto const& gaussian : gaussians) {
+      auto var = std::make_shared<Variable<Point2>>(gaussian);
+      gbp_graph->vars_.emplace(var->key(), var);
+    }
+
+    return gbp_graph;
   }
 
  protected:
