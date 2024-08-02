@@ -249,6 +249,8 @@ class Graph {
 
   auto const& cliques() const { return cliques_; }
 
+  void optimizeRoots() {}
+
  protected:
   std::unordered_map<Key, Node::shared_ptr> vars_;
   std::set<Factor::shared_ptr> factors_;

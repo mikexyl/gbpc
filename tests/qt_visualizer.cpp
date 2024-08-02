@@ -352,11 +352,19 @@ class MainWindow : public QWidget {
     // Set up the list widget
     listWidget = new QListWidget(this);
 
-    // Connect the itemClicked signal to a slot
+    // enable multi selection
+    listWidget->setSelectionMode(QAbstractItemView::MultiSelection);
+
     connect(listWidget,
-            &QListWidget::itemClicked,
+            &QListWidget::itemSelectionChanged,
             this,
-            &MainWindow::handleItemClicked);
+            &MainWindow::handleMultiItemsSelected);
+
+    // // Connect the itemClicked signal to a slot
+    // connect(listWidget,
+    //         &QListWidget::itemClicked,
+    //         this,
+    //         &MainWindow::handleItemClicked);
 
     QGroupBox* right_sidebar = new QGroupBox("");
     QVBoxLayout* right_sidebar_layout = new QVBoxLayout;
@@ -398,6 +406,19 @@ class MainWindow : public QWidget {
     if (data) {
       animatedWidget->highlightCliques({data});
     }
+  }
+
+  void handleMultiItemsSelected() {
+    // Handle the item being clicked
+    std::set<gbpc::GBPClique::shared_ptr> cliques;
+    for (auto item : listWidget->selectedItems()) {
+      auto data = item->data(Qt::UserRole).value<gbpc::GBPClique::shared_ptr>();
+      if (data) {
+        cliques.insert(data);
+      }
+    }
+
+    animatedWidget->highlightCliques(cliques);
   }
 
  public:
@@ -544,6 +565,32 @@ int main(int argc, char* argv[]) {
       list_widget->addItem(item);
     }
   });
+
+  window.addButtonActions(
+      "Optimize Roots", [&graph, &window](QPushButton* button) {
+        graph->optimizeRoots();
+
+        // message box
+        QString message = "Optimize Roots Not Implemented";
+        QMessageBox::information(&window, "Optimize Roots", message);
+      });
+
+  window.addButtonActions(
+      "Optimize Selected", [&graph, &window](QPushButton* button) {
+        auto list_widget = window.getListWidget();
+        std::set<gbpc::GBPClique::shared_ptr> cliques;
+        for (auto item : list_widget->selectedItems()) {
+          auto data =
+              item->data(Qt::UserRole).value<gbpc::GBPClique::shared_ptr>();
+          if (data) {
+            cliques.insert(data);
+          }
+        }
+
+        // message box
+        QString message = "Optimize Selected Cliques Not Implemented";
+        QMessageBox::information(&window, "Optimize Selected", message);
+      });
 
   window.addButtonActions("Toggle Loop",
                           [&graph, &loop_factors](QPushButton* button) {
