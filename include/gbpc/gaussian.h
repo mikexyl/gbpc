@@ -276,15 +276,22 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Node(const Gaussian& initial) : Gaussian(initial) {}
   virtual ~Node() = default;
 
-  void send(const std::set<shared_ptr>& exclude = {}) {
+  using NodePairFunc =
+      std::function<void(const Node::shared_ptr&, const Node::shared_ptr&)>;
+
+  void send(const NodePairFunc& post_pass,
+            const std::set<shared_ptr>& exclude = {}) {
     std::cout << "Node " << DefaultKeyFormatter(key_)
               << " has neighbors: " << neighbors_.size() << std::endl;
     for (auto neighbor : neighbors_) {
-      if (not exclude.contains(neighbor)) sendToNeighbor(neighbor);
+      if (exclude.contains(neighbor)) continue;
+      if (sendToNeighbor(neighbor)) {
+        post_pass(shared_from_this(), neighbor);
+      }
     }
   }
 
-  void sendToNeighbor(const shared_ptr& receiver) {
+  bool sendToNeighbor(const shared_ptr& receiver) {
     Gaussian message(this->prior());
 
     std::cout << " send from " << key_ << " to " << receiver->key()
@@ -310,11 +317,13 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
 
     std::cout << "final message: " << message.mu().transpose() << std::endl;
     if (message.empty()) {
-      return;
+      return false;
     }
 
     message.key() = receiver->key();
     receiver->receive(shared_from_this(), message);
+
+    return true;
   }
 
   void receive(const shared_ptr& sender, const Gaussian& message) {

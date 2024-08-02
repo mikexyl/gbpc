@@ -23,6 +23,12 @@ struct GaussianKeyCompare {
   }
 };
 
+struct GBPUpdateParams {
+  Node::shared_ptr root{nullptr};
+  Node::NodePairFunc pre_pass{};
+  Node::NodePairFunc post_pass{};
+};
+
 class Graph {
  public:
   using shared_ptr = std::shared_ptr<Graph>;
@@ -104,16 +110,18 @@ class Graph {
     }
   }
 
-  void optimize(Factor::shared_ptr root = nullptr) {
+  void optimize(const GBPUpdateParams& params = {}) {
+    auto root = params.root;
     if (factors_.empty()) {
       return;
     }
     if (root == nullptr) {
       root = *factors_.begin();
     }
-    root->send();
+    root->send(params.post_pass);
 
-    std::set<Node::shared_ptr> visited_nodes;
+    std::set<Node::shared_ptr> visited_vars;
+    std::set<Node::shared_ptr> visited_factors;
     std::queue<Node::shared_ptr> queue;
     queue.push(root);
 
@@ -122,19 +130,23 @@ class Graph {
       queue.pop();
 
       node->update();
-      node->send(visited_nodes);
+      node->send(params.post_pass, visited_factors);
 
-      visited_nodes.insert(node);
+      if (auto as_factor = std::dynamic_pointer_cast<Factor>(node)) {
+        visited_factors.insert(as_factor);
+      }
+
+      visited_vars.insert(node);
 
       for (auto const& neighbor : node->neighbors()) {
-        if (visited_nodes.find(neighbor) == visited_nodes.end()) {
+        if (visited_vars.find(neighbor) == visited_vars.end()) {
           queue.push(neighbor);
         }
       }
     }
 
-    // clearFactorMessages();
-    // clearVariableMessages();
+    clearFactorMessages();
+    clearVariableMessages();
   }
 
   auto const& vars() const { return vars_; }

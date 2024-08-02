@@ -1,3 +1,5 @@
+#include <tbb/concurrent_set.h>
+
 #include <Eigen/Dense>  // Include Eigen for matrix operations
 #include <QApplication>
 #include <QGroupBox>
@@ -8,6 +10,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <future>
 
 #include "gbpc/gbpc.h"
 
@@ -95,7 +98,10 @@ class AnimatedWidget : public QWidget {
   Q_OBJECT
 
  public:
-  AnimatedWidget(QWidget* parent = nullptr) : QWidget(parent), rectX(0) {
+  static constexpr float dt = 0.03;
+  static constexpr float duration = 0.2;
+
+  AnimatedWidget(QWidget* parent = nullptr) : QWidget(parent) {
     startAnimation();
   }
 
@@ -124,15 +130,18 @@ class AnimatedWidget : public QWidget {
     update();
   }
 
+  auto& addAnimation(const Eigen::Vector2d& start, const Eigen::Vector2d& end) {
+    std::cout << "addAnimation from " << start.transpose() << " to "
+              << end.transpose() << std::endl;
+    auto task = std::make_shared<AnimationTask>(start, end, duration, dt);
+    animation_tasks.insert(task);
+    return task->finished;
+  }
+
  protected:
   void paintEvent(QPaintEvent* event) override {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-
-    // Draw the moving rectangle
-    QRect rect = QRect(rectX, 50, 100, 100);
-    painter.setBrush(Qt::blue);
-    painter.drawRect(rect);
 
     // Draw all ellipses
     for (const auto& ellipse : ellipses) {
@@ -156,6 +165,25 @@ class AnimatedWidget : public QWidget {
         }
       }
     }
+
+    for (auto it = animation_tasks.begin(); it != animation_tasks.end();) {
+      auto& task = *it;
+      if (task->finished) {
+        it = animation_tasks.unsafe_erase(it);
+        continue;
+      }
+
+      painter.save();
+      auto current = task->step();
+      painter.setPen(QPen(QColor(255, 0, 0), 2));
+      painter.setBrush(QColor(255, 0, 0));
+      painter.translate(current[0], current[1]);
+      painter.drawEllipse(QPointF(0, 0), 5, 5);
+
+      painter.restore();
+
+      it++;
+    }
   }
 
   void connectPoints(QPainter& painter,
@@ -177,24 +205,51 @@ class AnimatedWidget : public QWidget {
   }
 
  private:
-  int rectX;
   QTimer* timer;
   std::vector<Ellipse> ellipses;
   std::set<gbpc::Graph::shared_ptr> graphs_;
   std::map<std::string, gbpc::Graph::shared_ptr> named_graphs_;
   std::map<gbpc::Graph::shared_ptr, Eigen::Vector3d> colors;
 
+  struct AnimationTask {
+    AnimationTask(const Eigen::Vector2d& start,
+                  const Eigen::Vector2d& end,
+                  float duration,
+                  float dt)
+        : duration(duration), dt(dt), start(start), end(end) {}
+
+    float duration{0.5};
+    float dt{0.03};
+
+    const Eigen::Vector2d start;
+    const Eigen::Vector2d end;
+    float t{0};
+
+    Eigen::Vector2d step() {
+      auto current = (end - start) * t / duration + start;
+
+      if (t < duration) {
+        t += dt;
+      }
+      if (t >= duration) {
+        finished.store(true);
+        finished.notify_all();
+      }
+
+      return current;
+    }
+
+    std::atomic<bool> finished{false};
+  };
+  tbb::concurrent_set<std::shared_ptr<AnimationTask>> animation_tasks;
+
   void startAnimation() {
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &AnimatedWidget::updatePosition);
-    timer->start(30);  // Update every 30 ms
+    timer->start(dt * 1000);
   }
 
   void updatePosition() {
-    rectX += 5;  // Move 5 pixels to the right
-    if (rectX > width()) {
-      rectX = -100;  // Reset position when off screen
-    }
     update();  // Trigger a repaint
   }
 };
@@ -224,12 +279,19 @@ class MainWindow : public QWidget {
                           4);  // Animated widget with larger stretch factor
   }
 
-  void addButtonActions(std::string name, std::function<void()> action) {
-    QPushButton* button = new QPushButton(QString::fromStdString(name));
+  void addButtonActions(std::string name,
+                        std::function<void(QPushButton*)> action,
+                        std::string text = "") {
+    if (text.empty()) text = name;
+    QPushButton* button = new QPushButton(QString::fromStdString(text));
     buttons[name] = button;
     sidebarLayout->addWidget(button);
-    buttonActions[name] = action;
-    connect(buttons[name], &QPushButton::clicked, this, action);
+    connect(
+        buttons[name], &QPushButton::clicked, this, std::bind(action, button));
+  }
+
+  auto& addAnimation(const Eigen::Vector2d& start, const Eigen::Vector2d& end) {
+    return animatedWidget->addAnimation(start, end);
   }
 
  public slots:
@@ -258,8 +320,26 @@ class MainWindow : public QWidget {
   AnimatedWidget* animatedWidget;
 
   std::map<std::string, QPushButton*> buttons;
-  std::map<std::string, std::function<void()>> buttonActions;
 };
+
+inline Eigen::Vector2d asPoint(const gbpc::Node::shared_ptr& node) {
+  Eigen::Vector2d point;
+  if (auto sender_as_factor = std::dynamic_pointer_cast<gbpc::Factor>(node)) {
+    if (auto between_factor =
+            std::dynamic_pointer_cast<gbpc::BetweenFactor<Point2>>(
+                sender_as_factor)) {
+      point = (between_factor->var1()->mu() + between_factor->var2()->mu()) / 2;
+    } else if (auto prior_factor =
+                   std::dynamic_pointer_cast<gbpc::PriorFactor<Point2>>(
+                       sender_as_factor)) {
+      point = prior_factor->var()->mu();
+    }
+  } else {
+    point = node->mu();
+  }
+
+  return point;
+}
 
 QColor Ellipse::HighlightColor = QColor(255, 0, 0, 100);
 
@@ -298,21 +378,15 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<gbpc::Factor::shared_ptr> loop_factors;
-  for (int i = 0; i < num_nodes; i++) {
-    int i_next = (i + 1) % num_nodes;
+  for (int i = 0; i < num_nodes - 1; i++) {
+    int i_next = i + 1;
     Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
     auto noise_measured = Point2(noised_samples[i_next] - noised_samples[i]);
     gbpc::Belief<Point2> measured(i + 10, noise_measured, cov, 1);
     auto factor = std::make_shared<gbpc::BetweenFactor<Point2>>(measured);
     factor->addAdjVar({variables[i], variables[i_next]});
     graph->add(factor);
-
-    loop_factors.clear();
-    loop_factors.push_back(factor);
   }
-
-  // remove loop factor
-  graph->remove(loop_factors);
 
   auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(
       gbpc::Belief<Point2>(20, samples[0], Eigen::Matrix2d::Identity(), 100));
@@ -323,35 +397,59 @@ int main(int argc, char* argv[]) {
 
   MainWindow window;
 
+  bool show_animation = true;
+
+  gbpc::GBPUpdateParams params;
+  params.root = prior_factor;
+  params.post_pass = [&](const gbpc::Node::shared_ptr& sender,
+                         const gbpc::Node::shared_ptr& receiver) {
+    if (not show_animation) return;
+    Eigen::Vector2d start = asPoint(sender);
+    Eigen::Vector2d end = asPoint(receiver);
+    window.addAnimation(start, end).wait(false);
+  };
+
+  std::future<void> gbp_opt_future;
+
   window.addGraph(graph, Eigen::Vector3d(0, 0, 255));
-  window.addButtonActions("GBP Optimize", [&graph, &prior_factor]() {
-    graph->optimize(prior_factor);
+  window.addButtonActions("GBP Optimize", [&](QPushButton* button) {
+    if ((not gbp_opt_future.valid()) or
+        gbp_opt_future.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+      gbp_opt_future =
+          std::async(std::launch::async, [&]() { graph->optimize(params); });
+    } else {
+      std::cout << "GBP Optimize is already running" << std::endl;
+    }
   });
-  window.addButtonActions("LM Optimize", [&graph, &window]() {
-    auto lm_graph = graph->solveByGtsam();
-    window.addGraph(lm_graph, Eigen::Vector3d(0, 255, 0), "LM");
-  });
-  window.addButtonActions("Reset", [&variables, &init]() {
+  window.addButtonActions(
+      "LM Optimize", [&graph, &window](QPushButton* button) {
+        auto lm_graph = graph->solveByGtsam();
+        window.addGraph(lm_graph, Eigen::Vector3d(0, 255, 0), "LM");
+      });
+  window.addButtonActions("Reset", [&variables, &init](QPushButton* button) {
     for (int i = 0; i < variables.size(); i++) {
       variables[i]->replace(init[i]);
     }
   });
 
-  window.addButtonActions("Toggle Loop", [&graph, &loop_factors]() {
-    if (graph->hasAny(loop_factors)) {
-      graph->remove(loop_factors);
-    } else {
-      graph->add(loop_factors);
-    }
-  });
+  window.addButtonActions("Toggle Loop",
+                          [&graph, &loop_factors](QPushButton* button) {
+                            if (graph->hasAny(loop_factors)) {
+                              graph->remove(loop_factors);
+                            } else {
+                              graph->add(loop_factors);
+                            }
+                          });
 
   window.addButtonActions(
-      "Add Loop", [&graph, &variables, &loop_factors, kCov]() {
+      "Add Loop",
+      [&graph, &variables, &loop_factors, kCov](QPushButton* button) {
         int i = random() % variables.size();
         int i_next = i;
         do {
           i_next = random() % variables.size();
-        } while (i_next == i);
+        } while (i_next == i and std::abs(i_next - i) == 1);
 
         Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
         auto noise_measured =
@@ -364,6 +462,15 @@ int main(int argc, char* argv[]) {
         loop_factors.push_back(factor);
         graph->add(factor);
       });
+
+  window.addButtonActions(
+      "Toggle Animation",
+      [&show_animation](QPushButton* button) {
+        show_animation = not show_animation;
+        button->setText(QString::fromStdString("Toggle Animation " +
+                                               std::to_string(show_animation)));
+      },
+      "Toggle Animation " + std::to_string(show_animation));
 
   // full screen
   window.showMaximized();

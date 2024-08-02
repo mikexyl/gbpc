@@ -3,6 +3,8 @@
 
 #include <concepts>
 
-namespace gbpc {}  // namespace gbpc
+namespace gbpc {
+
+}  // namespace gbpc
 
 #endif  // GBPC_TYPES_H_
