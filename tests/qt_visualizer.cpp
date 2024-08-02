@@ -15,20 +15,33 @@ class Ellipse {
  public:
   Ellipse(const Eigen::Vector2d& mean,
           const Eigen::Matrix2d& covariance,
-          const Eigen::Vector3d& color = Eigen::Vector3d(0, 0, 0))
+          const Eigen::Vector3d& color = Eigen::Vector3d(0, 0, 0),
+          bool draw_ellipse = true)
       : mean(mean),
         covariance(covariance),
+        draw_ellipse(draw_ellipse),
         color(QColor(color[0], color[1], color[2], 50)) {
     calculateParameters();
   }
 
   void draw(QPainter& painter) const {
     painter.save();
-    painter.setPen(Qt::red);
-    painter.setBrush(color);  // Transparent red fill color
     painter.translate(mean[0], mean[1]);
-    painter.rotate(angle);
-    painter.drawEllipse(QPointF(0, 0), axisLength1, axisLength2);
+
+    if (draw_ellipse) {
+      painter.setPen(Qt::red);
+      painter.setBrush(color);  // Transparent red fill color
+      painter.rotate(angle);
+      painter.drawEllipse(QPointF(0, 0), axisLength1, axisLength2);
+    }
+
+    // draw mean dot
+    painter.setPen(Qt::black);
+    auto dot_color = this->color;
+    dot_color.setAlpha(255);
+    painter.setBrush(dot_color);
+    painter.drawEllipse(QPointF(0, 0), 2, 2);
+
     painter.restore();
   }
 
@@ -40,6 +53,7 @@ class Ellipse {
   double axisLength1;
   double axisLength2;
   double angle;
+  bool draw_ellipse;
   QColor color;
   static QColor HighlightColor;
 
@@ -86,14 +100,27 @@ class AnimatedWidget : public QWidget {
   }
 
   void addEllipse(const Eigen::Vector2d& mean,
-                  const Eigen::Matrix2d& covariance) {
-    ellipses.emplace_back(mean, covariance);
+                  const Eigen::Matrix2d& covariance,
+                  const Eigen::Vector3d& color = Eigen::Vector3d(0, 0, 0),
+                  bool draw_ellipse = true) {
+    ellipses.emplace_back(mean, covariance, color, draw_ellipse);
     update();  // Trigger a repaint to show the new ellipse
   }
 
-  void addGraph(const gbpc::Graph::shared_ptr& graph, Eigen::Vector3d color) {
-    graph_.emplace_back(graph);
+  void addGraph(const gbpc::Graph::shared_ptr& graph,
+                Eigen::Vector3d color,
+                std::string name = "") {
+    if (name.size()) {
+      if (named_graphs_.find(name) != named_graphs_.end()) {
+        graphs_.erase(named_graphs_[name]);
+        colors.erase(named_graphs_[name]);
+      }
+      named_graphs_[name] = graph;
+    }
+
+    graphs_.insert(graph);
     colors[graph] = color;
+
     update();
   }
 
@@ -113,15 +140,15 @@ class AnimatedWidget : public QWidget {
     }
 
     // draw graph
-    for (const auto& graph : graph_) {
+    for (const auto& graph : graphs_) {
       for (const auto& [_, var] : graph->vars()) {
-        Ellipse ellipse(var->mu(), var->Sigma(), colors[graph]);
+        Ellipse ellipse(var->mu(), var->Sigma(), colors[graph], var->N() != 0);
         ellipse.draw(painter);
       }
     }
 
     // connect graph
-    for (const auto& graph : graph_) {
+    for (const auto& graph : graphs_) {
       for (const auto& factor : graph->factors()) {
         auto adj_vars = factor->adj_vars();
         for (int i = 0; i < adj_vars.size() - 1; i++) {
@@ -153,7 +180,8 @@ class AnimatedWidget : public QWidget {
   int rectX;
   QTimer* timer;
   std::vector<Ellipse> ellipses;
-  std::vector<gbpc::Graph::shared_ptr> graph_;
+  std::set<gbpc::Graph::shared_ptr> graphs_;
+  std::map<std::string, gbpc::Graph::shared_ptr> named_graphs_;
   std::map<gbpc::Graph::shared_ptr, Eigen::Vector3d> colors;
 
   void startAnimation() {
@@ -218,8 +246,10 @@ class MainWindow : public QWidget {
     animatedWidget->addEllipse(mean, covariance);
   }
 
-  void addGraph(const gbpc::Graph::shared_ptr& graph, Eigen::Vector3d color) {
-    animatedWidget->addGraph(graph, color);
+  void addGraph(const gbpc::Graph::shared_ptr& graph,
+                Eigen::Vector3d color,
+                std::string name = "") {
+    animatedWidget->addGraph(graph, color, name);
   }
 
  private:
@@ -258,7 +288,7 @@ int main(int argc, char* argv[]) {
 
   for (int i = 0; i < num_nodes; i++) {
     init.emplace_back(gbpc::Belief<Point2>(
-        i, samples[i], Eigen::Matrix2d::Identity() * kCov * 3, 1));
+        i, samples[i], Eigen::Matrix2d::Identity() * kCov * 3, 0));
   }
 
   // Add variables
@@ -267,6 +297,7 @@ int main(int argc, char* argv[]) {
     variables.push_back(std::make_shared<gbpc::Variable<Point2>>(init[i]));
   }
 
+  std::vector<gbpc::Factor::shared_ptr> loop_factors;
   for (int i = 0; i < num_nodes; i++) {
     int i_next = (i + 1) % num_nodes;
     Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
@@ -275,7 +306,13 @@ int main(int argc, char* argv[]) {
     auto factor = std::make_shared<gbpc::BetweenFactor<Point2>>(measured);
     factor->addAdjVar({variables[i], variables[i_next]});
     graph->add(factor);
+
+    loop_factors.clear();
+    loop_factors.push_back(factor);
   }
+
+  // remove loop factor
+  graph->remove(loop_factors);
 
   auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(
       gbpc::Belief<Point2>(20, samples[0], Eigen::Matrix2d::Identity(), 100));
@@ -292,13 +329,41 @@ int main(int argc, char* argv[]) {
   });
   window.addButtonActions("LM Optimize", [&graph, &window]() {
     auto lm_graph = graph->solveByGtsam();
-    window.addGraph(lm_graph, Eigen::Vector3d(0, 255, 0));
+    window.addGraph(lm_graph, Eigen::Vector3d(0, 255, 0), "LM");
   });
   window.addButtonActions("Reset", [&variables, &init]() {
     for (int i = 0; i < variables.size(); i++) {
       variables[i]->replace(init[i]);
     }
   });
+
+  window.addButtonActions("Toggle Loop", [&graph, &loop_factors]() {
+    if (graph->hasAny(loop_factors)) {
+      graph->remove(loop_factors);
+    } else {
+      graph->add(loop_factors);
+    }
+  });
+
+  window.addButtonActions(
+      "Add Loop", [&graph, &variables, &loop_factors, kCov]() {
+        int i = random() % variables.size();
+        int i_next = i;
+        do {
+          i_next = random() % variables.size();
+        } while (i_next == i);
+
+        Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
+        auto noise_measured =
+            Point2(variables[i_next]->mu() - variables[i]->mu());
+        // more noise
+        noise_measured += Point2::Random() * 10;
+        gbpc::Belief<Point2> measured(i + 10, noise_measured, cov, 1);
+        auto factor = std::make_shared<gbpc::BetweenFactor<Point2>>(measured);
+        factor->addAdjVar({variables[i], variables[i_next]});
+        loop_factors.push_back(factor);
+        graph->add(factor);
+      });
 
   // full screen
   window.showMaximized();

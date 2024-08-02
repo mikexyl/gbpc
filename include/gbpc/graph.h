@@ -39,10 +39,32 @@ class Graph {
     return factor;
   }
 
+  void remove(const Factor::shared_ptr& factor) { factors_.erase(factor); }
+
+  void remove(const std::vector<Factor::shared_ptr>& factors) {
+    for (auto const& factor : factors) {
+      remove(factor);
+    }
+  }
+
   auto add(const std::vector<Factor::shared_ptr>& factors) {
     for (auto const& factor : factors) {
       add(factor);
     }
+  }
+
+  bool has(const Factor::shared_ptr& factor) {
+    return factors_.find(factor) != factors_.end();
+  }
+
+  bool hasAny(const std::vector<Factor::shared_ptr>& factors) {
+    for (auto const& factor : factors) {
+      if (has(factor)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   template <typename T>
