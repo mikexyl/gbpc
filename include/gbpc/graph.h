@@ -23,6 +23,14 @@ struct GaussianKeyCompare {
   }
 };
 
+class GBPClique : public std::vector<Node::shared_ptr> {
+ public:
+  using shared_ptr = std::shared_ptr<GBPClique>;
+
+  GBPClique() = default;
+  virtual ~GBPClique() = default;
+};
+
 struct GBPUpdateParams {
   Node::shared_ptr root{nullptr};
   Node::NodePairFunc pre_pass{};
@@ -165,10 +173,39 @@ class Graph {
     return {graph, values};
   }
 
-  void buildBayesTree() {
+  auto buildBayesTree() {
     auto const& [graph, values] = toGtsam();
 
-    // BayesTree<ISAM2Clique> tree{};
+    // Step 4: Linearize the graph around the result to get a
+    // GaussianFactorGraph
+    GaussianFactorGraph::shared_ptr linearGraph = graph->linearize(*values);
+
+    // Step 5: Create an ordering for variable elimination
+    Ordering ordering = Ordering::Colamd(*linearGraph);
+
+    // Step 6: Eliminate the factor graph to obtain a Bayes Net
+    GaussianBayesNet::shared_ptr bayesNet =
+        linearGraph->eliminateSequential(ordering);
+
+    // Step 7: Convert the Bayes Net to a Bayes Tree
+    GaussianBayesTree::shared_ptr bayesTree =
+        linearGraph->eliminateMultifrontal(ordering);
+
+    cliques_.clear();
+    for (auto const& [clique_key, clique] : bayesTree->nodes()) {
+      cliques_.insert(fromClique(clique));
+    }
+
+    return bayesTree;
+  }
+
+  GBPClique::shared_ptr fromClique(
+      const GaussianBayesTreeClique::shared_ptr& clique) {
+    GBPClique::shared_ptr gbp_clique(new GBPClique);
+    for (auto const& key : clique->conditional()->keys()) {
+      gbp_clique->emplace_back(vars_[key]);
+    }
+    return gbp_clique;
   }
 
   Graph::shared_ptr solveByGtsam() {
@@ -194,9 +231,12 @@ class Graph {
     return gbp_graph;
   }
 
+  auto const& cliques() const { return cliques_; }
+
  protected:
   std::unordered_map<Key, Node::shared_ptr> vars_;
   std::set<Factor::shared_ptr> factors_;
+  std::set<GBPClique::shared_ptr> cliques_;
 };
 
 }  // namespace gbpc

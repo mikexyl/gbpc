@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -137,6 +138,86 @@ class AnimatedWidget : public QWidget {
     animation_tasks.insert(task);
     return task->finished;
   }
+  QRectF boundingRect(const gbpc::GBPClique& clique) {
+    qreal minX = clique[0]->mu().x();
+    qreal maxX = clique[0]->mu().x();
+    qreal minY = clique[0]->mu().y();
+    qreal maxY = clique[0]->mu().y();
+
+    for (const auto& node : clique) {
+      QPointF point(node->mu().x(), node->mu().y());
+      minX = std::min(minX, point.x());
+      maxX = std::max(maxX, point.x());
+      minY = std::min(minY, point.y());
+      maxY = std::max(maxY, point.y());
+    }
+
+    return QRectF(QPointF(minX, minY), QPointF(maxX, maxY));
+  }
+
+  QPainterPath cliquePath(const gbpc::GBPClique& clique) {
+    QPainterPath path;
+
+    if (clique.empty()) {
+      return path;  // Return an empty path if there are no points
+    }
+
+    if (clique.size() == 2) {
+      // Calculate the bounding box for the two points
+      QRectF rect = boundingRect(clique);
+
+      // Expand the bounding box slightly to ensure the oval contains the points
+      rect.adjust(-10, -10, 10, 10);  // Adjust this value as needed
+
+      // Create an oval that fits the bounding box
+      path.addEllipse(rect);
+
+      return path;
+    }
+
+    // Calculate the bounding box for the clique
+    QRectF rect = boundingRect(clique);
+
+    // Expand the bounding box slightly to ensure the oval contains all points
+    rect.adjust(-20, -20, 20, 20);  // Adjust this value as needed
+
+    // Calculate the mean of the points
+    Eigen::Vector2d mean(0.0, 0.0);
+    for (const auto& node : clique) {
+      mean += Eigen::Vector2d(node->mu().x(), node->mu().y());
+    }
+    mean /= clique.size();
+
+    // Calculate the covariance matrix
+    Eigen::Matrix2d covariance = Eigen::Matrix2d::Zero();
+    for (const auto& node : clique) {
+      Eigen::Vector2d centered =
+          Eigen::Vector2d(node->mu().x(), node->mu().y()) - mean;
+      covariance += centered * centered.transpose();
+    }
+    covariance /= clique.size();
+
+    // Perform eigen decomposition
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(covariance);
+    Eigen::Vector2d eigenvalues = solver.eigenvalues();
+    Eigen::Matrix2d eigenvectors = solver.eigenvectors();
+
+    // Determine the angle of the major axis
+    qreal angle =
+        std::atan2(eigenvectors(1, 1), eigenvectors(0, 1)) * 180.0 / M_PI;
+
+    // Create an oval that fits the bounding box
+    path.addEllipse(rect);
+
+    // Rotate the path around the center of the bounding box
+    QTransform transform;
+    transform.translate(mean.x(), mean.y());
+    transform.rotate(angle);
+    transform.translate(-mean.x(), -mean.y());
+    path = transform.map(path);
+
+    return path;
+  }
 
  protected:
   void paintEvent(QPaintEvent* event) override {
@@ -183,6 +264,16 @@ class AnimatedWidget : public QWidget {
       painter.restore();
 
       it++;
+    }
+
+    for (auto const& graph : graphs_) {
+      for (auto const& clique : graph->cliques()) {
+        painter.save();
+        painter.setPen(QPen(QColor(0, 255, 0), 2));
+        painter.setBrush(QColor(0, 255, 0, 30));
+        painter.drawPath(cliquePath(*clique));
+        painter.restore();
+      }
     }
   }
 
@@ -433,6 +524,9 @@ int main(int argc, char* argv[]) {
     }
   });
 
+  window.addButtonActions(
+      "Bayes Tree", [&graph](QPushButton* button) { graph->buildBayesTree(); });
+
   window.addButtonActions("Toggle Loop",
                           [&graph, &loop_factors](QPushButton* button) {
                             button->setCheckable(true);
@@ -452,7 +546,7 @@ int main(int argc, char* argv[]) {
         int i_next = i;
         do {
           i_next = random() % variables.size();
-        } while (i_next == i and std::abs(i_next - i) == 1);
+        } while (i_next == i or std::abs(i_next - i) == 1);
 
         Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
         auto noise_measured =
