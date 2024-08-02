@@ -40,7 +40,7 @@ class Factor : public Node {
    * @brief factor update doesn't do anything
    *
    */
-  void update() override final {}
+  void update() override {}
 
   KeySet keys() const {
     KeySet keys;

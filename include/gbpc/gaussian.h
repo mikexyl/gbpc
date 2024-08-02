@@ -222,7 +222,7 @@ class Gaussian {
         for (auto message : messages) {
           if (merge_type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
-            double k = std::max(0.01, 1 - hellinger);
+            double k = std::max(0.04, 1 - hellinger);
             message.relax(k);
           }
           this->merge(message);
@@ -276,9 +276,11 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Node(const Gaussian& initial) : Gaussian(initial) {}
   virtual ~Node() = default;
 
-  void send(const shared_ptr& exclude = nullptr) {
+  void send(const std::set<shared_ptr>& exclude = {}) {
+    std::cout << "Node " << DefaultKeyFormatter(key_)
+              << " has neighbors: " << neighbors_.size() << std::endl;
     for (auto neighbor : neighbors_) {
-      if (neighbor != exclude) sendToNeighbor(neighbor);
+      if (not exclude.contains(neighbor)) sendToNeighbor(neighbor);
     }
   }
 
@@ -300,11 +302,13 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
           std::cout << "message: " << messages_[*it].mu().transpose()
                     << std::endl;
         } else {
-          return;
+          std::cout << "no message from " << DefaultKeyFormatter(key_) << " to "
+                    << (*it)->key() << std::endl;
         }
       }
     }
 
+    std::cout << "final message: " << message.mu().transpose() << std::endl;
     if (message.empty()) {
       return;
     }

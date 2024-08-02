@@ -99,9 +99,10 @@ class Graph {
       auto node = queue.front();
       queue.pop();
 
-      visited_nodes.insert(node);
       node->update();
-      node->send();
+      node->send(visited_nodes);
+
+      visited_nodes.insert(node);
 
       for (auto const& neighbor : node->neighbors()) {
         if (visited_nodes.find(neighbor) == visited_nodes.end()) {

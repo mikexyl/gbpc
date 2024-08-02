@@ -243,11 +243,22 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<gbpc::Belief<Point2>> init;
+  std::vector<Eigen::Vector2d> samples;
+  std::vector<Eigen::Vector2d> noised_samples;
+  static constexpr int kRadius = 200;
+  static constexpr float kNoise = 20;
+  float kCov = kNoise * kNoise;
   for (int i = 0; i < num_nodes; i++) {
-    init.emplace_back(gbpc::Belief<Point2>(i,
-                                           Point2(i * 50 + 100, i * 70 + 100),
-                                           Eigen::Matrix2d::Identity() * 1000,
-                                           1));
+    double angle = 2 * M_PI * i / num_nodes;
+    Eigen::Vector2d sample(kRadius * std::cos(angle) + kRadius + 200,
+                           kRadius * std::sin(angle) + kRadius + 200);
+    samples.push_back(sample);
+    noised_samples.push_back(sample + Eigen::Vector2d::Random() * kNoise);
+  }
+
+  for (int i = 0; i < num_nodes; i++) {
+    init.emplace_back(gbpc::Belief<Point2>(
+        i, samples[i], Eigen::Matrix2d::Identity() * kCov * 3, 1));
   }
 
   // Add variables
@@ -256,19 +267,18 @@ int main(int argc, char* argv[]) {
     variables.push_back(std::make_shared<gbpc::Variable<Point2>>(init[i]));
   }
 
-  for (int i = 0; i < num_nodes - 1; i++) {
-    Eigen::Matrix2d cov = Eigen::Matrix2d::Identity();
-    cov << 20, 0, 0, 20;
-    cov *= cov;
-    gbpc::Belief<Point2> measured(i + 10, Point2(50, 50), cov, 1);
+  for (int i = 0; i < num_nodes; i++) {
+    int i_next = (i + 1) % num_nodes;
+    Eigen::Matrix2d cov = Eigen::Matrix2d::Identity() * kCov;
+    auto noise_measured = Point2(noised_samples[i_next] - noised_samples[i]);
+    gbpc::Belief<Point2> measured(i + 10, noise_measured, cov, 1);
     auto factor = std::make_shared<gbpc::BetweenFactor<Point2>>(measured);
-    factor->addAdjVar({variables[i], variables[i + 1]});
+    factor->addAdjVar({variables[i], variables[i_next]});
     graph->add(factor);
   }
 
-  auto prior_factor =
-      std::make_shared<gbpc::PriorFactor<Point2>>(gbpc::Belief<Point2>(
-          20, Point2(100, 100), Eigen::Matrix2d::Identity() * 100, 100));
+  auto prior_factor = std::make_shared<gbpc::PriorFactor<Point2>>(
+      gbpc::Belief<Point2>(20, samples[0], Eigen::Matrix2d::Identity(), 100));
   prior_factor->addAdjVar(variables[0]);
   graph->add(prior_factor);
 
@@ -290,7 +300,8 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  window.resize(1000, 600);
+  // full screen
+  window.showMaximized();
   window.show();
 
   return app.exec();
