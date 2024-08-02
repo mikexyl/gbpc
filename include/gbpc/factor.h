@@ -4,6 +4,8 @@
 #include <gtsam/slam/dataset.h>
 
 #include <Eigen/Eigen>
+#include <boost/concept_check.hpp>
+#include <memory>
 
 #include "gbpc/gaussian.h"
 #include "gbpc/variable.h"
@@ -12,8 +14,6 @@ namespace gbpc {
 
 class Factor : public Node {
  public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
   using shared_ptr = std::shared_ptr<Factor>;
 
   Factor(const Gaussian& measured) : Node(measured) {}

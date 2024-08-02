@@ -1,22 +1,10 @@
 option(GBPC_BUILD_TESTS "Build tests" ON)
 
 if(GBPC_BUILD_TESTS)
-    FetchContent_Declare(
-                SFML
-                GIT_REPOSITORY https://github.com/SFML/SFML.git
-                GIT_TAG 2.6.1  # Use the desired version or branch
-        )
-        FetchContent_MakeAvailable(SFML)
+    find_package(SFML REQUIRED)
 
     # fetch tgui
-        FetchContent_Declare(
-                tgui
-                GIT_REPOSITORY https://github.com/texus/TGUI.git
-                GIT_TAG v1.4.1
-        )
-        set(TGUI_BACKEND SFML_GRAPHICS)
-        set(TGUI_BUILD_FRAMEWORK OFF)
-        FetchContent_MakeAvailable(tgui)
+    find_package(TGUI REQUIRED)
 
   add_executable(test_gtsam
        test_gtsam.cpp)

@@ -1,5 +1,6 @@
 if (GBPC_BUILD_TESTS)
-    
+    find_package(SFML REQUIRED)
+    find_package(TGUI REQUIRED)
 
     add_executable(demo
             demo.cpp)
