@@ -4,10 +4,13 @@
 #include <QApplication>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QListWidget>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -138,22 +141,6 @@ class AnimatedWidget : public QWidget {
     animation_tasks.insert(task);
     return task->finished;
   }
-  QRectF boundingRect(const gbpc::GBPClique& clique) {
-    qreal minX = clique[0]->mu().x();
-    qreal maxX = clique[0]->mu().x();
-    qreal minY = clique[0]->mu().y();
-    qreal maxY = clique[0]->mu().y();
-
-    for (const auto& node : clique) {
-      QPointF point(node->mu().x(), node->mu().y());
-      minX = std::min(minX, point.x());
-      maxX = std::max(maxX, point.x());
-      minY = std::min(minY, point.y());
-      maxY = std::max(maxY, point.y());
-    }
-
-    return QRectF(QPointF(minX, minY), QPointF(maxX, maxY));
-  }
 
   QPainterPath cliquePath(const gbpc::GBPClique& clique) {
     QPainterPath path;
@@ -162,61 +149,30 @@ class AnimatedWidget : public QWidget {
       return path;  // Return an empty path if there are no points
     }
 
-    if (clique.size() == 2) {
-      // Calculate the bounding box for the two points
-      QRectF rect = boundingRect(clique);
+    // Start the path at the first point
+    path.moveTo(clique[0]->mu().x(), clique[0]->mu().y());
 
-      // Expand the bounding box slightly to ensure the oval contains the points
-      rect.adjust(-10, -10, 10, 10);  // Adjust this value as needed
-
-      // Create an oval that fits the bounding box
-      path.addEllipse(rect);
-
-      return path;
+    for (int i = 1; i < clique.size(); ++i) {
+      // Connect the nodes with a cubic Bezier curve for ultra-slick lines
+      QPointF mid1((clique[i - 1]->mu().x() + clique[i]->mu().x()) / 2,
+                   clique[i - 1]->mu().y());
+      QPointF mid2(clique[i]->mu().x(),
+                   (clique[i - 1]->mu().y() + clique[i]->mu().y()) / 2);
+      path.cubicTo(
+          mid1, mid2, QPointF(clique[i]->mu().x(), clique[i]->mu().y()));
     }
 
-    // Calculate the bounding box for the clique
-    QRectF rect = boundingRect(clique);
-
-    // Expand the bounding box slightly to ensure the oval contains all points
-    rect.adjust(-20, -20, 20, 20);  // Adjust this value as needed
-
-    // Calculate the mean of the points
-    Eigen::Vector2d mean(0.0, 0.0);
-    for (const auto& node : clique) {
-      mean += Eigen::Vector2d(node->mu().x(), node->mu().y());
-    }
-    mean /= clique.size();
-
-    // Calculate the covariance matrix
-    Eigen::Matrix2d covariance = Eigen::Matrix2d::Zero();
-    for (const auto& node : clique) {
-      Eigen::Vector2d centered =
-          Eigen::Vector2d(node->mu().x(), node->mu().y()) - mean;
-      covariance += centered * centered.transpose();
-    }
-    covariance /= clique.size();
-
-    // Perform eigen decomposition
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(covariance);
-    Eigen::Vector2d eigenvalues = solver.eigenvalues();
-    Eigen::Matrix2d eigenvectors = solver.eigenvectors();
-
-    // Determine the angle of the major axis
-    qreal angle =
-        std::atan2(eigenvectors(1, 1), eigenvectors(0, 1)) * 180.0 / M_PI;
-
-    // Create an oval that fits the bounding box
-    path.addEllipse(rect);
-
-    // Rotate the path around the center of the bounding box
-    QTransform transform;
-    transform.translate(mean.x(), mean.y());
-    transform.rotate(angle);
-    transform.translate(-mean.x(), -mean.y());
-    path = transform.map(path);
+    // Optionally close the path if you want to connect the last node back to
+    // the first
+    path.lineTo(clique[0]->mu().x(), clique[0]->mu().y());
 
     return path;
+  }
+
+  void highlightCliques(std::set<gbpc::GBPClique::shared_ptr> cliques) {
+    highlighted_cliques.clear();
+    highlighted_cliques = cliques;
+    update();
   }
 
  protected:
@@ -269,9 +225,32 @@ class AnimatedWidget : public QWidget {
     for (auto const& graph : graphs_) {
       for (auto const& clique : graph->cliques()) {
         painter.save();
-        painter.setPen(QPen(QColor(0, 255, 0), 2));
-        painter.setBrush(QColor(0, 255, 0, 30));
-        painter.drawPath(cliquePath(*clique));
+        // set same seed
+        srand(clique->front()->key());
+
+        QColor random_color =
+            QColor(rand() % 256, rand() % 256, rand() % 256, 10);
+        if (highlighted_cliques.find(clique) != highlighted_cliques.end()) {
+          random_color.setAlpha(40);
+        }
+        painter.setPen(QPen(random_color, 10));
+        painter.setBrush(QColor(random_color));
+
+        // Draw the lines connecting the nodes
+        for (int i = 1; i < clique->size(); ++i) {
+          painter.drawLine(clique->at(i - 1)->mu().x(),
+                           clique->at(i - 1)->mu().y(),
+                           clique->at(i)->mu().x(),
+                           clique->at(i)->mu().y());
+        }
+
+        // Optionally close the path if you want to connect the last node back
+        // to the first
+        painter.drawLine(clique->back()->mu().x(),
+                         clique->back()->mu().y(),
+                         clique->front()->mu().x(),
+                         clique->front()->mu().y());
+
         painter.restore();
       }
     }
@@ -301,6 +280,7 @@ class AnimatedWidget : public QWidget {
   std::set<gbpc::Graph::shared_ptr> graphs_;
   std::map<std::string, gbpc::Graph::shared_ptr> named_graphs_;
   std::map<gbpc::Graph::shared_ptr, Eigen::Vector3d> colors;
+  std::set<gbpc::GBPClique::shared_ptr> highlighted_cliques;
 
   struct AnimationTask {
     AnimationTask(const Eigen::Vector2d& start,
@@ -368,6 +348,22 @@ class MainWindow : public QWidget {
     mainLayout->addWidget(sidebar, 1);  // Sidebar with stretch factor 1
     mainLayout->addWidget(animatedWidget,
                           4);  // Animated widget with larger stretch factor
+
+    // Set up the list widget
+    listWidget = new QListWidget(this);
+
+    // Connect the itemClicked signal to a slot
+    connect(listWidget,
+            &QListWidget::itemClicked,
+            this,
+            &MainWindow::handleItemClicked);
+
+    QGroupBox* right_sidebar = new QGroupBox("");
+    QVBoxLayout* right_sidebar_layout = new QVBoxLayout;
+    right_sidebar_layout->addWidget(listWidget);
+    right_sidebar->setLayout(right_sidebar_layout);
+
+    mainLayout->addWidget(right_sidebar, 1);
   }
 
   void addButtonActions(std::string name,
@@ -385,6 +381,8 @@ class MainWindow : public QWidget {
     return animatedWidget->addAnimation(start, end);
   }
 
+  auto& getListWidget() { return listWidget; }
+
  public slots:
   void addNewEllipse() {
     // Example mean and covariance
@@ -392,6 +390,14 @@ class MainWindow : public QWidget {
     Eigen::Matrix2d covariance;
     covariance << 400, 100, 100, 200;
     animatedWidget->addEllipse(mean, covariance);
+  }
+
+  void handleItemClicked(QListWidgetItem* item) {
+    // Handle the item being clicked
+    auto data = item->data(Qt::UserRole).value<gbpc::GBPClique::shared_ptr>();
+    if (data) {
+      animatedWidget->highlightCliques({data});
+    }
   }
 
  public:
@@ -409,6 +415,7 @@ class MainWindow : public QWidget {
   QHBoxLayout* mainLayout;
   QVBoxLayout* sidebarLayout;
   AnimatedWidget* animatedWidget;
+  QListWidget* listWidget;
 
   std::map<std::string, QPushButton*> buttons;
 };
@@ -524,8 +531,19 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  window.addButtonActions(
-      "Bayes Tree", [&graph](QPushButton* button) { graph->buildBayesTree(); });
+  window.addButtonActions("Bayes Tree", [&graph, &window](QPushButton* button) {
+    graph->buildBayesTree();
+    auto list_widget = window.getListWidget();
+    list_widget->clear();
+    for (const auto& clique : graph->cliques()) {
+      auto item = new QListWidgetItem(list_widget);
+      item->setText(QString::fromStdString(clique->print()));
+      QVariant data;
+      data.setValue(clique);
+      item->setData(Qt::UserRole, data);
+      list_widget->addItem(item);
+    }
+  });
 
   window.addButtonActions("Toggle Loop",
                           [&graph, &loop_factors](QPushButton* button) {

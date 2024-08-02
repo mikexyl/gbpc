@@ -27,8 +27,24 @@ class GBPClique : public std::vector<Node::shared_ptr> {
  public:
   using shared_ptr = std::shared_ptr<GBPClique>;
 
-  GBPClique() = default;
+  GBPClique(bool is_root = false) : is_root_(is_root) {}
   virtual ~GBPClique() = default;
+
+  std::string print() {
+    std::stringstream ss;
+    ss << "Clique: ";
+    for (auto const& node : *this) {
+      ss << DefaultKeyFormatter(node->key()) << " ";
+    }
+
+    if (is_root_) {
+      ss << " (root)";
+    }
+    return ss.str();
+  }
+
+ private:
+  bool is_root_{false};
 };
 
 struct GBPUpdateParams {
@@ -201,7 +217,7 @@ class Graph {
 
   GBPClique::shared_ptr fromClique(
       const GaussianBayesTreeClique::shared_ptr& clique) {
-    GBPClique::shared_ptr gbp_clique(new GBPClique);
+    GBPClique::shared_ptr gbp_clique(new GBPClique(clique->isRoot()));
     for (auto const& key : clique->conditional()->keys()) {
       gbp_clique->emplace_back(vars_[key]);
     }
