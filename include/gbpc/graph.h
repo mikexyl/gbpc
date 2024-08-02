@@ -1,6 +1,10 @@
 #ifndef GBPC_GRAPH
 #define GBPC_GRAPH
 
+#include <gtsam/nonlinear/ISAM2Clique.h>
+
+#include <queue>
+
 #include "gbpc/exceptions.h"
 #include "gbpc/factor.h"
 #include "gbpc/gaussian.h"
@@ -78,38 +82,66 @@ class Graph {
     }
   }
 
-  void optimize() {
-    for (auto const& factor : factors_) {
-      factor->send();
+  void optimize(Factor::shared_ptr root = nullptr) {
+    if (factors_.empty()) {
+      return;
+    }
+    if (root == nullptr) {
+      root = *factors_.begin();
+    }
+    root->send();
+
+    std::set<Node::shared_ptr> visited_nodes;
+    std::queue<Node::shared_ptr> queue;
+    queue.push(root);
+
+    while (not queue.empty()) {
+      auto node = queue.front();
+      queue.pop();
+
+      visited_nodes.insert(node);
+      node->update();
+      node->send();
+
+      for (auto const& neighbor : node->neighbors()) {
+        if (visited_nodes.find(neighbor) == visited_nodes.end()) {
+          queue.push(neighbor);
+        }
+      }
     }
 
-    for (auto const& [_, var] : vars_) {
-      var->send();
-    }
-
-    for (auto const& [_, var] : vars_) {
-      var->update();
-    }
-
-    clearFactorMessages();
-    clearVariableMessages();
+    // clearFactorMessages();
+    // clearVariableMessages();
   }
 
   auto const& vars() const { return vars_; }
   auto const& factors() const { return factors_; }
-  Graph::shared_ptr solveByGtsam() {
-    NonlinearFactorGraph graph;
-    Values values;
+
+  GraphAndValues toGtsam() {
+    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph);
+    Values::shared_ptr values(new Values);
 
     for (auto const& factor : factors_) {
       auto gtsam = factor->gtsam();
-      graph.add(*gtsam.first);
-      values.insert_or_assign(*gtsam.second);
+      graph->add(*gtsam.first);
+      values->insert_or_assign(*gtsam.second);
     }
 
-    LevenbergMarquardtOptimizer optimizer(graph, values);
+    return {graph, values};
+  }
+
+  void buildBayesTree() {
+    auto const& [graph, values] = toGtsam();
+
+    // BayesTree<ISAM2Clique> tree{};
+  }
+
+  Graph::shared_ptr solveByGtsam() {
+    auto const& [graph, values] = toGtsam();
+
+    LevenbergMarquardtOptimizer optimizer(*graph, *values);
     auto result = optimizer.optimize();
-    Marginals marginals(graph, result);
+    Marginals marginals(*graph, result);
 
     std::vector<Gaussian> gaussians;
     for (auto const& [key, value] : result) {

@@ -236,11 +236,18 @@ QColor Ellipse::HighlightColor = QColor(255, 0, 0, 100);
 int main(int argc, char* argv[]) {
   gbpc::Graph::shared_ptr graph(new gbpc::Graph);
 
+  // first arg is the number of nodes
   int num_nodes = 6;
+  if (argc > 1) {
+    num_nodes = std::stoi(argv[1]);
+  }
+
   std::vector<gbpc::Belief<Point2>> init;
   for (int i = 0; i < num_nodes; i++) {
-    init.emplace_back(gbpc::Belief<Point2>(
-        i, Point2(i * 50 + 100, 100), Eigen::Matrix2d::Identity() * 36, 0));
+    init.emplace_back(gbpc::Belief<Point2>(i,
+                                           Point2(i * 50 + 100, i * 70 + 100),
+                                           Eigen::Matrix2d::Identity() * 1000,
+                                           1));
   }
 
   // Add variables
@@ -270,10 +277,17 @@ int main(int argc, char* argv[]) {
   MainWindow window;
 
   window.addGraph(graph, Eigen::Vector3d(0, 0, 255));
-  window.addButtonActions("GBP Optimize", [&graph]() { graph->optimize(); });
+  window.addButtonActions("GBP Optimize", [&graph, &prior_factor]() {
+    graph->optimize(prior_factor);
+  });
   window.addButtonActions("LM Optimize", [&graph, &window]() {
     auto lm_graph = graph->solveByGtsam();
     window.addGraph(lm_graph, Eigen::Vector3d(0, 255, 0));
+  });
+  window.addButtonActions("Reset", [&variables, &init]() {
+    for (int i = 0; i < variables.size(); i++) {
+      variables[i]->replace(init[i]);
+    }
   });
 
   window.resize(1000, 600);

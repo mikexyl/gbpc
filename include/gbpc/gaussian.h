@@ -165,6 +165,23 @@ class Gaussian {
     return Gaussian(key, mu_mix, Sigma_mix, weighted_N);
   }
 
+  void add(const Gaussian& other, bool expect_same_key = true) {
+    if (N_ == 0) {
+      return this->replace(other);
+    }
+
+    if (expect_same_key) {
+      assert(key_ == other.key_);
+    }
+
+    Sigma_ += other.Sigma_;
+    mu_ += other.mu_;
+    N_ = std::min(N_, other.N_);
+    N_++;
+
+    updateCanonical();
+  }
+
   void merge(const Gaussian& other, bool expect_same_key = true) {
     if (N_ == 0) {
       return this->replace(other);
@@ -172,8 +189,6 @@ class Gaussian {
 
     if (expect_same_key) {
       assert(key_ == other.key_);
-    } else {
-      assert(key_ != other.key_);
     }
 
     // check size of the matrices
@@ -207,7 +222,7 @@ class Gaussian {
         for (auto message : messages) {
           if (merge_type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
-            double k = std::max(0.1, 1 - hellinger);
+            double k = std::max(0.01, 1 - hellinger);
             message.relax(k);
           }
           this->merge(message);
@@ -232,7 +247,7 @@ class Gaussian {
 
   std::string print() const {
     std::stringstream ss;
-    ss << "key: " << key_ << std::endl;
+    ss << "key: " << DefaultKeyFormatter(key_) << std::endl;
     ss << "mu: " << mu_.transpose() << std::endl;
     ss << "Sigma: " << Sigma_ << std::endl;
     ss << "N: " << N_ << std::endl;
@@ -261,22 +276,31 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Node(const Gaussian& initial) : Gaussian(initial) {}
   virtual ~Node() = default;
 
-  void send() {
+  void send(const shared_ptr& exclude = nullptr) {
     for (auto neighbor : neighbors_) {
-      send(neighbor);
+      if (neighbor != exclude) sendToNeighbor(neighbor);
     }
   }
 
-  void send(const shared_ptr& receiver) {
+  void sendToNeighbor(const shared_ptr& receiver) {
     Gaussian message(this->prior());
+
+    std::cout << " send from " << key_ << " to " << receiver->key()
+              << std::endl;
 
     for (auto it = neighbors_.begin(); it != neighbors_.end(); it++) {
       if (*it != receiver) {
-        if (auto potential = this->potential(*it)) {
-          message.merge(*potential);
-        }
         if (messages_.find(*it) != messages_.end()) {
-          message.merge(messages_[*it]);
+          auto potential = this->potential(*it, messages_[*it]);
+          if (not potential.has_value()) {
+            message.merge(messages_[*it], false);
+          } else {
+            message.merge(*potential, false);
+          }
+          std::cout << "message: " << messages_[*it].mu().transpose()
+                    << std::endl;
+        } else {
+          return;
         }
       }
     }
@@ -299,8 +323,8 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
 
   virtual Gaussian prior() const { return Gaussian(); }
 
-  virtual std::optional<Gaussian> potential(
-      const shared_ptr& node = nullptr) = 0;
+  virtual std::optional<Gaussian> potential(const Node::shared_ptr& sender,
+                                            const Gaussian& message) = 0;
 
   void clearMessages() { messages_.clear(); }
 
@@ -315,11 +339,18 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     }
   }
 
-  void update() {
+  virtual void update() {
     // update belief
+    std::cout << "-------" << key() << "--------" << std::endl;
+    std::cout << "start :" << mu().transpose() << ","
+              << Sigma().diagonal().transpose() << std::endl;
     for (auto const& [_, message] : messages_) {
       assert(message.key() == this->key_);
+      std::cout << "message :" << message.mu().transpose() << ","
+                << message.Sigma().diagonal().transpose() << std::endl;
       this->Gaussian::update({message}, GaussianMergeType::MergeRobust);
+      std::cout << "update :" << mu().transpose() << ","
+                << Sigma().diagonal().transpose() << std::endl;
     }
   }
 
@@ -348,8 +379,8 @@ class Belief : public Node {
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
       : Node(Gaussian(key, mu, Sigma, N)) {}
 
-  virtual std::optional<Gaussian> potential(
-      const Node::shared_ptr& node = nullptr) override {
+  virtual std::optional<Gaussian> potential(const Node::shared_ptr& sender,
+                                            const Gaussian& message) override {
     return std::nullopt;
   }
 

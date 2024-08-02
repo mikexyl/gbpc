@@ -36,6 +36,12 @@ class Factor : public Node {
     }
   }
 
+  /**
+   * @brief factor update doesn't do anything
+   *
+   */
+  void update() override final {}
+
   KeySet keys() const {
     KeySet keys;
     for (auto& adj_var : this->adj_vars()) {
@@ -75,20 +81,28 @@ class BetweenFactor : public Factor {
     return static_cast<Variable<VALUE>*>(adj_vars()[1].get());
   }
 
-  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
-    assert(var == adj_vars()[0] || var == adj_vars()[1]);
+  std::optional<Gaussian> potential(const Node::shared_ptr& sender,
+                                    const Gaussian& message) override {
+    assert(sender == adj_vars()[0] || sender == adj_vars()[1]);
 
-    if (var == adj_vars()[0]) {
-      Gaussian message(*this);
-      message.merge(*adj_vars()[0], false);
-      return message;
-    } else if (var == adj_vars()[1]) {
+    if (sender == adj_vars()[0]) {
+      Gaussian measured(*this);
+      std::cout << "BetweenFactor::measured: " << measured.print() << std::endl;
+      std::cout << "BetweenFactor::message: " << message.print() << std::endl;
+      measured.add(message, false);
+      std::cout << "BetweenFactor::potential: " << measured.print() << std::endl;
+      return measured;
+    } else if (sender == adj_vars()[1]) {
       auto measured = traits<VALUE>::Expmap(this->mu());
       auto inverse = traits<VALUE>::Inverse(measured);
       auto inverse_mu = traits<VALUE>::Logmap(inverse);
       Gaussian inverse_message(
           this->key(), inverse_mu, this->Sigma(), this->N());
-      inverse_message.merge(*adj_vars()[1], false);
+      std::cout << "BetweenFactor::potential inverse: "
+                << inverse_message.print() << std::endl;
+      inverse_message.add(message, false);
+      std::cout << "BetweenFactor::potential: " << inverse_message.print()
+                << std::endl;
       return inverse_message;
     }
 
@@ -138,7 +152,8 @@ class PriorFactor : public Factor {
     return static_cast<Gaussian*>(adj_vars()[0].get());
   }
 
-  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
+  std::optional<Gaussian> potential(const Node::shared_ptr& sender,
+                                    const Gaussian& message) override {
     throw "should never be called";
   }
 
