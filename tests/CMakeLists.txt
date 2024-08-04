@@ -18,9 +18,10 @@ if(GBPC_BUILD_TESTS)
     # Enable automatic handling of moc files
     set(CMAKE_AUTOMOC ON)
 
-     add_executable(test_qt
-        graph_widget.cpp
-       qt_visualizer.cpp)
+    set(SOURCES graph_widget.cpp qt_visualizer.cpp)
+    set(HEADERS graph_widget.h)
+
+     add_executable(test_qt ${SOURCES} ${HEADERS})
    target_link_libraries(test_qt
        PUBLIC
        gbpc

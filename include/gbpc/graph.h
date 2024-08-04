@@ -14,7 +14,7 @@ using namespace gtsam;
 
 namespace gbpc {
 
-using Key = size_t;
+using Key = gtsam::Key;
 
 struct GaussianKeyCompare {
   bool operator()(const Gaussian::shared_ptr& lhs,

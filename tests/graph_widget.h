@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphviz/gvc.h>
 #include <tbb/concurrent_set.h>
 
 #include <Eigen/Eigen>
@@ -7,6 +8,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include "ellipse.h"

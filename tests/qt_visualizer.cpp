@@ -3,6 +3,9 @@
 
 #include <Eigen/Dense>  // Include Eigen for matrix operations
 #include <QApplication>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsView>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QListWidget>
@@ -19,10 +22,239 @@
 
 #include "ellipse.h"
 #include "gbpc/gbpc.h"
+#include "gbpc/graph.h"
 #include "graph_widget.h"
-#include "tree_widget.h"
 
-class TreeWidget;
+class ClickableEllipseItem : public QGraphicsObject {
+  Q_OBJECT
+
+ public:
+  ClickableEllipseItem(qreal x,
+                       qreal y,
+                       qreal width,
+                       qreal height,
+                       const gbpc::Key& key,
+                       const QString& label,
+                       QGraphicsItem* parent = nullptr)
+      : QGraphicsObject(parent),
+        key(key),
+        label(label),
+        ellipseRect(x, y, width, height) {
+    setFlag(QGraphicsItem::ItemIsSelectable);
+  }
+
+  QRectF boundingRect() const override { return ellipseRect; }
+
+  const gbpc::Key key;
+  const QString label;
+
+ protected:
+  void mousePressEvent(QGraphicsSceneMouseEvent* event) override {
+    if (contains(event->pos())) {
+      qDebug() << "Ellipse clicked at:" << event->pos();
+    }
+    QGraphicsObject::mousePressEvent(event);
+  }
+  void paint(QPainter* painter,
+             const QStyleOptionGraphicsItem* option,
+             QWidget* widget) override {
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+
+    painter->setBrush(Qt::lightGray);
+    painter->drawEllipse(ellipseRect);
+    painter->setPen(QPen(Qt::black, 1));
+    painter->drawText(ellipseRect, Qt::AlignCenter, label);
+  }
+
+ private:
+  QRectF ellipseRect;
+};
+
+class TreeWidget : public QWidget {
+  Q_OBJECT
+
+ public:
+  TreeWidget(QWidget* parent = nullptr) : QWidget(parent) {
+    scene = new QGraphicsScene(this);
+    view = new QGraphicsView(scene, this);
+
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->addWidget(view);
+    setLayout(layout);
+  }
+
+ public slots:
+  void setTreeStr(const QString& graph_str) {
+    this->graph_str_ = graph_str.toStdString();
+
+    GVC_t* gvc = gvContext();
+    Agraph_t* g = agmemread(graph_str.toStdString().c_str());
+    gvLayout(gvc, g, "dot");
+    char* result = nullptr;
+    unsigned int length = 0;
+    gvRenderData(gvc, g, "plain", &result, &length);
+    setLayoutString(QString::fromStdString(result));
+
+    graph_updated_ = true;
+    update();
+  }
+
+ protected:
+  void clear() {
+    nodeLabels.clear();
+    nodePositions.clear();
+    edges.clear();
+    update();
+  }
+
+  void paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+
+    if (not graph_updated_) return;
+    graph_updated_ = false;
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    auto step_x = width() / (numLevelX + 1);
+    auto step_y = height() / (numLevelY + 1);
+
+    nodes.clear();
+    scene->clear();
+
+    // draw edges
+    for (auto edge : edges) {
+      auto first = nodePositions[edge.first],
+           second = nodePositions[edge.second];
+      QPointF from = toWindowCoordinates(first) +
+                     QPointF(step_x / 2., step_y / 2.),
+              to = toWindowCoordinates(second) +
+                   QPointF(step_x / 2., step_y / 2.);
+      // draw arrow
+      drawArrow(painter, from, to);
+    }
+
+    for (auto it = nodePositions.begin(); it != nodePositions.end(); ++it) {
+      QPointF pos = toWindowCoordinates(it.value());
+      QRectF ellipseRect(pos.x(), pos.y(), step_x, step_y * 0.6);
+      // std string to size_t
+      size_t key = std::stoul(it.key().toStdString());
+      ClickableEllipseItem* node =
+          new ClickableEllipseItem(ellipseRect.x(),
+                                   ellipseRect.y(),
+                                   ellipseRect.width(),
+                                   ellipseRect.height(),
+                                   key,
+                                   nodeLabels[it.key()]);
+      scene->addItem(node);
+      std::cout << ellipseRect.x() << " " << ellipseRect.y() << " "
+                << ellipseRect.width() << " " << ellipseRect.height()
+                << std::endl;
+    }
+  }
+
+  QPointF toWindowCoordinates(QPointF pos) {
+    // Adjust positions for the widget's coordinate system
+    pos.setX(pos.x() * this->width() * 0.5);
+    pos.setY(pos.y() * this->height() * 0.5);
+    return QPointF(pos.x(), pos.y());
+  }
+
+  void drawArrow(QPainter& painter, const QPointF& from, const QPointF& to) {
+    Q_UNUSED(painter);
+    scene->addLine(from.x(), from.y(), to.x(), to.y());
+
+    // TODO: Draw arrowhead
+  }
+
+ private:
+  std::string graph_str_;
+  std::atomic<bool> graph_updated_{false};
+  QMap<QString, QPointF> nodePositions;
+  QVector<QPair<QString, QString>> edges;
+  QMap<QString, QString> nodeLabels;
+  QVector<ClickableEllipseItem*> nodes;
+  int numLevelX = 0, numLevelY = 0;
+
+  QGraphicsScene* scene;
+  QGraphicsView* view;
+
+  void setLayoutString(const QString& layout) {
+    clear();
+    parsePlainLayout(layout);
+    update();  // Trigger a repaint
+  }
+
+  void parsePlainLayout(const QString& layout) {
+    std::cout << layout.toStdString() << std::endl;
+    nodePositions.clear();
+    std::istringstream iss(layout.toStdString());
+    std::string line;
+
+    while (std::getline(iss, line)) {
+      std::istringstream lineStream(line);
+      std::string type;
+      lineStream >> type;
+
+      if (type == "node") {
+        std::string name;
+        double x, y, width, height;
+        std::string label, style, shape, color, fillcolor;
+
+        lineStream >> name >> x >> y >> width >> height;
+        std::getline(lineStream, label, '\"');
+        std::getline(lineStream,
+                     label,
+                     '\"');  // This is to skip to the actual label content
+        lineStream >> style >> shape >> color >> fillcolor;
+
+        nodePositions[QString::fromStdString(name)] = QPointF(x, y);
+        nodeLabels[QString::fromStdString(name)] =
+            QString::fromStdString(label);
+      } else if (type == "edge") {
+        std::string from, to;
+        lineStream >> from >> to;
+        edges.push_back(
+            {QString::fromStdString(from), QString::fromStdString(to)});
+      }
+    }
+
+    // normalize positions
+    qreal min_x = std::numeric_limits<qreal>::max();
+    qreal min_y = std::numeric_limits<qreal>::max();
+    qreal max_x = std::numeric_limits<qreal>::min();
+    qreal max_y = std::numeric_limits<qreal>::min();
+
+    std::set<qreal> levelsX, levelsY;
+
+    for (auto it = nodePositions.begin(); it != nodePositions.end(); ++it) {
+      min_x = std::min(min_x, it.value().x());
+      min_y = std::min(min_y, it.value().y());
+      max_x = std::max(max_x, it.value().x());
+      max_y = std::max(max_y, it.value().y());
+      levelsX.insert(it.value().x());
+      levelsY.insert(it.value().y());
+    }
+
+    qreal width = max_x - min_x, height = max_y - min_y;
+
+    for (auto it = nodePositions.begin(); it != nodePositions.end(); ++it) {
+      QPointF& pos = it.value();
+      if (width != 0)
+        pos.setX((pos.x() - min_x) / width);
+      else
+        pos.setX(0.5);
+      if (height != 0)
+        pos.setY(1 - (pos.y() - min_y) / height);
+      else
+        pos.setY(0.5);
+    }
+
+    numLevelX = levelsX.size();
+    numLevelY = levelsY.size();
+  }
+};
 
 class MainWindow : public QWidget {
   Q_OBJECT
@@ -59,12 +291,6 @@ class MainWindow : public QWidget {
             this,
             &MainWindow::handleMultiItemsSelected);
 
-    // // Connect the itemClicked signal to a slot
-    // connect(listWidget,
-    //         &QListWidget::itemClicked,
-    //         this,
-    //         &MainWindow::handleItemClicked);
-
     QGroupBox* right_sidebar = new QGroupBox("");
     QVBoxLayout* right_sidebar_layout = new QVBoxLayout;
     right_sidebar_layout->addWidget(listWidget);
@@ -73,8 +299,10 @@ class MainWindow : public QWidget {
     mainLayout->addWidget(right_sidebar, 1);
 
     // new window
-    graphWidget = new TreeWidget("graph.dot");
-    graphWidget->show();
+    treeWidget = new TreeWidget(nullptr);
+    treeWidget->show();
+
+    connect(this, &MainWindow::setTreeStr, treeWidget, &TreeWidget::setTreeStr);
   }
 
   void addButtonActions(std::string name,
@@ -93,6 +321,9 @@ class MainWindow : public QWidget {
   }
 
   auto& getListWidget() { return listWidget; }
+
+ signals:
+  void setTreeStr(const QString& tree_str);
 
  public slots:
   void addNewEllipse() {
@@ -140,7 +371,7 @@ class MainWindow : public QWidget {
   QVBoxLayout* sidebarLayout;
   GraphWidget* animatedWidget;
   QListWidget* listWidget;
-  TreeWidget* graphWidget;
+  TreeWidget* treeWidget;
 
   std::map<std::string, QPushButton*> buttons;
 };
@@ -257,7 +488,7 @@ int main(int argc, char* argv[]) {
   });
 
   window.addButtonActions("Bayes Tree", [&graph, &window](QPushButton* button) {
-    graph->buildBayesTree();
+    auto tree_str = graph->buildBayesTree()->dot();
     auto list_widget = window.getListWidget();
     list_widget->clear();
     for (const auto& clique : graph->cliques()) {
@@ -268,6 +499,12 @@ int main(int argc, char* argv[]) {
       item->setData(Qt::UserRole, data);
       list_widget->addItem(item);
     }
+
+    // save str to file
+    std::ofstream file("bayes_tree.dot");
+    file << tree_str;
+    file.close();
+    window.setTreeStr(QString::fromStdString(tree_str));
   });
 
   window.addButtonActions(
