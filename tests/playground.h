@@ -19,6 +19,7 @@ class PlayGround : public QObject,
     Params() : Communication<PlayGround>::Params{} {}
     float min_move_distance_normalized = 0.05;
     float max_move_distance_normalized = 0.051;
+    float max_delta_theta = M_PI / 3;
     int n_step = 30;
   };
 
@@ -39,9 +40,10 @@ class PlayGround : public QObject,
     // set random seed
     std::mt19937 gen(Robot::GetNumRobots());
     std::uniform_real_distribution<> dis_width(0, this->rect().width()),
-        dis_height(0, this->rect().height());
+        dis_height(0, this->rect().height()), dis_theta(0, 2 * M_PI);
 
-    auto robot = new Robot(dis_width(gen), dis_height(gen), radius);
+    auto robot =
+        new Robot(dis_width(gen), dis_height(gen), dis_theta(gen), radius);
     connect(robot, &Robot::finishedPath, this, &PlayGround::setNewTarget);
     connect(robot,
             &Robot::positionChanged,
@@ -64,7 +66,7 @@ class PlayGround : public QObject,
   const Params params_;
 
  public slots:
-  void setNewTarget(Robot* robot) {
+  void setNewTarget(Robot* robot, const Path& finished_path) {
     float min_size = std::min(this->rect().width(), this->rect().height());
     float max_size = std::max(this->rect().width(), this->rect().height());
 
@@ -72,20 +74,52 @@ class PlayGround : public QObject,
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<> dis_dist(
         params_.min_move_distance_normalized * min_size,
-        params_.max_move_distance_normalized * max_size);
-    float r = dis_dist(gen);
-    std::vector<QPointF> feasible_targets;
-    for (float theta = 0; theta < 2 * M_PI; theta += M_PI / 20) {
-      QPointF new_pos = robot->pos() + QPointF(r * cos(theta), r * sin(theta));
-      if (this->contains(new_pos)) {
-        feasible_targets.push_back(new_pos);
+        params_.max_move_distance_normalized * max_size),
+        dist_dtheta(-params_.max_delta_theta, params_.max_delta_theta);
+    float r = dis_dist(gen), dtheta = dist_dtheta(gen);
+    float new_theta = robot->theta() + dtheta;
+
+    QPointF new_pos =
+        robot->pos() + QPointF(r * cos(new_theta), r * sin(new_theta));
+    QPointF target;
+    if (this->contains(new_pos)) {
+      target = new_pos;
+    } else {
+      std::vector<QPointF> feasible_targets;
+      std::vector<float> feasible_thetas;
+      for (float theta = 0; theta < 2 * M_PI; theta += M_PI / 20) {
+        QPointF new_pos =
+            robot->pos() + QPointF(r * cos(theta), r * sin(theta));
+        if (this->contains(new_pos)) {
+          feasible_targets.push_back(new_pos);
+          feasible_thetas.push_back(theta);
+        }
       }
+      // randomly choose a feasible target
+      std::uniform_int_distribution<> dis_theta(0, feasible_targets.size() - 1);
+      int rdn_idx = dis_theta(gen);
+      target = feasible_targets[rdn_idx];
+      new_theta = feasible_thetas[rdn_idx];
     }
 
-    // randomly choose a feasible target
-    std::uniform_int_distribution<> dis_theta(0, feasible_targets.size() - 1);
-    QPointF target = feasible_targets[dis_theta(gen)];
     robot->setTarget(target, params_.n_step);
+    robot->setTheta(new_theta);
+
+    auto comm_map_it = comm_map().find(robot);
+    if (comm_map_it == comm_map().end()) {
+      return;
+    }
+
+    for (auto const& neighbor : comm_map_it->second) {
+      if (not detect(robot, neighbor)) {
+        continue;
+      }
+      QPointF p1 = robot->pos(), p2 = neighbor->pos();
+      QLineF line(p1, p2);
+      // draw the line
+      scene()->addLine(
+          line, QPen(Qt::black, 1, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    }
   }
 
   void robotPositionChanged(Robot* robot) {

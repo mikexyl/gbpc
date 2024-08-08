@@ -12,6 +12,7 @@
 #include "robot.h"
 
 int Robot::NumRobots = 0;
+std::atomic<size_t> Path::TrajectoryKey = std::atomic<size_t>(0);
 
 class Swarm : public QGraphicsView {
   Q_OBJECT

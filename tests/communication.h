@@ -1,5 +1,8 @@
 #pragma once
 
+#include <gtsam/geometry/Pose2.h>
+#include <gtsam/slam/BetweenFactor.h>
+
 #include "nanoflann.hpp"
 #include "robot.h"
 
@@ -12,7 +15,8 @@ template <typename T>
 class Communication {
  public:
   struct Params {
-    const double normalized_communication_range = 0.2;
+    const double normalized_communication_range = 0.1;
+    const double inter_measurement_prob = 0.2;
     const double delay = 0;  // step
   };
 
@@ -61,7 +65,7 @@ class Communication {
     }
   }
 
-  std::vector<Robot*> robotsInRange(const Robot* robot) {
+  std::set<Robot*> robotsInRange(const Robot* robot) {
     return robotsInRange(
         {robot->x(), robot->y()},
         params_.normalized_communication_range * derived()->length());
@@ -76,12 +80,21 @@ class Communication {
   }
 
   auto const& comm_map() const { return comm_map_; }
+  bool canCommunicate(Robot* robot1, Robot* robot2) {
+    return comm_map_[robot1].find(robot2) != comm_map_[robot1].end();
+  }
 
+  bool detect(Robot* robot1, Robot* robot2) {
+    return canCommunicate(robot1, robot2) &&
+           (rand() % 100) < params_.inter_measurement_prob * 100;
+  }
+
+ public:
   const Params params_;
 
  private:
-  std::vector<Robot*> robotsInRange(const QPointF& point, qreal range) {
-    std::vector<Robot*> result;
+  std::set<Robot*> robotsInRange(const QPointF& point, qreal range) {
+    std::set<Robot*> result;
     if (!kd_tree_) return result;
 
     std::vector<nanoflann::ResultItem<typename KDTree::IndexType, qreal>>
@@ -92,13 +105,13 @@ class Communication {
         &query_pt[0], range * range, ret_matches, params);
 
     for (size_t i = 0; i < nMatches; ++i) {
-      result.push_back(derived()->robots()[ret_matches[i].first]);
+      result.insert(derived()->robots()[ret_matches[i].first]);
     }
 
     return result;
   }
 
   PointCloud cloud_;
-  using CommTable = std::map<Robot*, std::vector<Robot*>>;
+  using CommTable = std::map<Robot*, std::set<Robot*>>;
   CommTable comm_map_;
 };
