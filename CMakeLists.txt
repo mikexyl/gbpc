@@ -10,6 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 add_definitions(-march=native)
@@ -22,7 +24,14 @@ find_package(TBB REQUIRED)
 find_package(GSL REQUIRED)
 include(FetchContent)
 
-find_package(Matplot++ REQUIRED)
+find_package(Matplot++ QUIET)
+if (NOT Matplot++_FOUND)
+    FetchContent_Declare(
+            matplotplusplus
+            GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus.git
+            GIT_TAG master)
+    FetchContent_MakeAvailable(matplotplusplus)
+endif()
 
 set(INCLUDES
         PUBLIC
@@ -49,7 +58,6 @@ target_link_libraries(gbpc
 
 # build tests
 add_subdirectory(tests)
-add_subdirectory(demo)
 
 install(TARGETS gbpc
         EXPORT gbpcTargets

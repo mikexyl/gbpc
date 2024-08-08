@@ -4,7 +4,17 @@ if(GBPC_BUILD_TESTS)
     find_package(SFML REQUIRED)
 
     # fetch tgui
-    find_package(TGUI REQUIRED)
+    find_package(TGUI QUIET)
+    if(NOT TGUI_FOUND)
+        message(STATUS "TGUI not found, fetching from git")
+        include(FetchContent)
+        FetchContent_Declare(
+            tgui
+            GIT_REPOSITORY https://github.com/texus/TGUI.git
+            GIT_TAG 1.x)
+        set(TGUI_BACKEND SFML_GRAPHICS)
+        FetchContent_MakeAvailable(tgui)
+    endif()
 
   add_executable(test_gtsam
        test_gtsam.cpp)
@@ -36,4 +46,18 @@ if(GBPC_BUILD_TESTS)
         ${GRAPHVIZ_PATHPLAN_LIBRARY})
     target_include_directories(test_qt PRIVATE
         ${GRAPHVIZ_INCLUDE_DIRS})
+
+    FetchContent_Declare(
+        nanoflann
+        GIT_REPOSITORY https://github.com/jlblancoc/nanoflann.git
+        GIT_TAG v1.6.0)
+    FetchContent_MakeAvailable(nanoflann)
+    add_executable(swarm_game
+           swarm_game.cpp)
+     target_link_libraries(swarm_game PRIVATE
+        gbpc
+        nanoflann
+        Qt6::Widgets
+        Qt6::Core
+        Qt6::Gui)
 endif()
