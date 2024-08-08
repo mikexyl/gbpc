@@ -15,13 +15,18 @@ class PlayGround : public QObject,
   Q_OBJECT
 
  public:
-  using Params = Communication<PlayGround>::Params;
+  struct Params : public Communication<PlayGround>::Params {
+    Params() : Communication<PlayGround>::Params{} {}
+    float min_move_distance_normalized = 0.05;
+    float max_move_distance_normalized = 0.051;
+    int n_step = 30;
+  };
 
   PlayGround(qreal x,
              qreal y,
              qreal w,
              qreal h,
-             Communication<PlayGround>::Params params,
+             Params params = {},
              QGraphicsItem* parent = nullptr)
       : QGraphicsRectItem(x, y, w, h, parent),
         Communication<PlayGround>{params} {}
@@ -55,18 +60,19 @@ class PlayGround : public QObject,
     robots_.push_back(robot);
   }
 
+ public:
+  const Params params_;
+
  public slots:
   void setNewTarget(Robot* robot) {
     float min_size = std::min(this->rect().width(), this->rect().height());
     float max_size = std::max(this->rect().width(), this->rect().height());
-    const float kMinMoveDistance = min_size * 0.05,
-                kMaxMoveDistance = max_size * 0.1;
-    static constexpr int kNStep = 100;
 
     // set random seed
     std::mt19937 gen(std::random_device{}());
-    std::uniform_real_distribution<> dis_dist(kMinMoveDistance,
-                                              kMaxMoveDistance);
+    std::uniform_real_distribution<> dis_dist(
+        params_.min_move_distance_normalized * min_size,
+        params_.max_move_distance_normalized * max_size);
     float r = dis_dist(gen);
     std::vector<QPointF> feasible_targets;
     for (float theta = 0; theta < 2 * M_PI; theta += M_PI / 20) {
@@ -79,7 +85,7 @@ class PlayGround : public QObject,
     // randomly choose a feasible target
     std::uniform_int_distribution<> dis_theta(0, feasible_targets.size() - 1);
     QPointF target = feasible_targets[dis_theta(gen)];
-    robot->setTarget(target, kNStep);
+    robot->setTarget(target, params_.n_step);
   }
 
   void robotPositionChanged(Robot* robot) {

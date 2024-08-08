@@ -70,7 +70,7 @@ class MainWindow : public QMainWindow {
 
  public:
   MainWindow(QWidget* parent = nullptr) : QMainWindow(parent) {
-    swarm = new Swarm(Swarm::Params{}, 20, this);
+    swarm = new Swarm(Swarm::Params{}, 30, this);
     setCentralWidget(swarm);
     setWindowTitle("Swarm Simulation");
     showMaximized();

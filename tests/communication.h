@@ -12,7 +12,7 @@ template <typename T>
 class Communication {
  public:
   struct Params {
-    const double normalized_communication_range = 0.1;
+    const double normalized_communication_range = 0.2;
     const double delay = 0;  // step
   };
 
