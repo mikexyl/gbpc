@@ -23,6 +23,10 @@ class Robot : public QObject, public QGraphicsItem {
   Robot(gtsam::Key id, qreal x, qreal y, qreal radius)
       : id_(id), radius_(radius) {
     setPos(x, y);
+
+    std::mt19937 gen(id_);
+    std::uniform_real_distribution<> dis_color(0, 255);
+    color_ = QColor(dis_color(gen), dis_color(gen), dis_color(gen));
   }
 
   Robot(qreal x, qreal y, qreal radius)
@@ -39,12 +43,8 @@ class Robot : public QObject, public QGraphicsItem {
     Q_UNUSED(option);
     Q_UNUSED(widget);
 
-    std::mt19937 gen(id_);
-    std::uniform_real_distribution<> dis_color(0, 255);
-    auto color = QColor(dis_color(gen), dis_color(gen), dis_color(gen));
-
     // Draw the robot as a circle
-    painter->setBrush(color);
+    painter->setBrush(color_);
     painter->drawEllipse(boundingRect());
     // draw the id as label
     painter->drawText(boundingRect(),
@@ -53,7 +53,10 @@ class Robot : public QObject, public QGraphicsItem {
   }
 
   // Method to move the robot
-  void move(qreal dx, qreal dy) { setPos(x() + dx, y() + dy); }
+  void move(qreal dx, qreal dy) {
+    setPos(x() + dx, y() + dy);
+    positionChanged(this);
+  }
 
   /**
    * @brief move along the path
@@ -78,14 +81,18 @@ class Robot : public QObject, public QGraphicsItem {
              steps};
   }
 
+  auto color() const { return color_; }
+
   const gtsam::Key id_;
 
  signals:
   void finishedPath(Robot*);
+  void positionChanged(Robot*);
 
  private:
   qreal radius_;
   Path path_;
+  QColor color_;
 
  public:
   static int GetNumRobots() { return NumRobots; }
