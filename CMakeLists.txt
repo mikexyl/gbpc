@@ -20,6 +20,7 @@ add_compile_options(-Wno-sign-compare)
 find_package(Eigen3 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
+find_package(fmt REQUIRED)
 
 find_package(GSL REQUIRED)
 include(FetchContent)
@@ -46,6 +47,7 @@ set(DEPENDENCIES
         gtsam
         TBB::tbb
         GSL::gsl
+        fmt::fmt
 )
 
 add_library(gbpc SHARED

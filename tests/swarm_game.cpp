@@ -9,7 +9,10 @@
 #include <random>
 
 #include "nanoflann.hpp"
+#include "playground.h"
 #include "robot.h"
+
+int Robot::NumRobots = 0;
 
 /**
  * @brief mixin class for swarm communication
@@ -20,7 +23,7 @@ template <typename T>
 class Communication {
  public:
   struct Params {
-    const double communication_range = 300.0;
+    const double communication_range = 100.0;
     const double delay = 0;  // step
   };
 
@@ -120,35 +123,42 @@ class Swarm : public QGraphicsView, public Communication<Swarm> {
     scene = new QGraphicsScene(this);
     setScene(scene);
     setRenderHint(QPainter::Antialiasing);
-    qreal width = 1080, height = 720;
+    qreal width = 1600, height = 900;
     setSceneRect(0, 0, width, height);
 
-    // draw a bouding box of the scene
-    scene->addRect(0, 0, width, height);
+    // draw a bounding box of the scene
+    playground_ = new PlayGround(0, 0, width, height);
+    scene->addItem(playground_);
 
-    std::cout << "width: " << width << ", height: " << height << std::endl;
-    for (int i = 0; i < num_robots; i++) {
-      // set random seed as i
-      std::mt19937 gen(i);
-      std::uniform_real_distribution<> dis_width(0, width),
-          dis_height(0, height);
-
-      addRobot(dis_width(gen), dis_height(gen), 10);
-    }
+    addRobot(num_robots);
 
     // set a timer for updating communication
     QTimer* timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Swarm::updateCommTimerEvent);
-    static int const kUpdateCommInterval = 100;
+    connect(timer, &QTimer::timeout, this, &Swarm::moveRobots);
+    static int const kWindoFreq = 30;
+    int const kUpdateCommInterval = 1000 / kWindoFreq;
     timer->start(kUpdateCommInterval);
   }
 
-  void addRobot(qreal x, qreal y, qreal radius) {
-    std::cout << "addRobot: " << num_robot_ << " " << x << " " << y << " "
-              << radius << std::endl;
-    Robot* robot = new Robot(gtsam::Symbol('p', num_robot_++), x, y, radius);
+  void addRobot() {
+    Robot* robot = playground_->spawn();
+    connect(
+        robot, &Robot::finishedPath, playground_, &PlayGround::setNewTarget);
     scene->addItem(robot);
     robots_.push_back(robot);
+  }
+
+  void moveRobots() {
+    for (auto robot : robots_) {
+      robot->move();
+    }
+  }
+
+  void addRobot(int num_robots) {
+    for (int i = 0; i < num_robots; i++) {
+      addRobot();
+    }
   }
 
   void removeRobot() {
@@ -190,8 +200,7 @@ class Swarm : public QGraphicsView, public Communication<Swarm> {
   QGraphicsScene* scene;
   std::vector<Robot*> robots_;
   std::vector<QGraphicsLineItem*> lines_;
-
-  int num_robot_ = 0;
+  PlayGround* playground_;
 };
 
 class MainWindow : public QMainWindow {
@@ -205,9 +214,7 @@ class MainWindow : public QMainWindow {
     showMaximized();
   }
 
-  void addRobot(qreal x, qreal y, qreal radius) {
-    swarm->addRobot(x, y, radius);
-  }
+  void addRobot() { swarm->addRobot(); }
 
   void removeRobot() { swarm->removeRobot(); }
 

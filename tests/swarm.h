@@ -7,6 +7,7 @@
 #include <QWidget>
 #include <vector>
 
+#include "playground.h"
 #include "robot.h"
 
 class Swarm : public QGraphicsView {

@@ -53,6 +53,8 @@ if(GBPC_BUILD_TESTS)
         GIT_TAG v1.6.0)
     FetchContent_MakeAvailable(nanoflann)
     add_executable(swarm_game
+            playground.h
+            robot.h
            swarm_game.cpp)
      target_link_libraries(swarm_game PRIVATE
         gbpc
