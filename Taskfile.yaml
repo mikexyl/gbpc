@@ -1,0 +1,14 @@
+version: '3'
+
+tasks:
+  build-Release:
+    cmds:
+      - cmake --preset config-Release
+      - source /opt/ros/humble/setup.sh && cmake --build --preset build-Release
+  
+  build-debug:
+    cmds:
+      - cmake --preset config-debug
+      - source /opt/ros/humble/setup.sh && cmake --build --preset build-debug
+
+

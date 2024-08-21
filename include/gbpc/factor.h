@@ -27,9 +27,11 @@ public:
     std::stringstream ss;
     ss << "Factor::update: \n"
        << adj_var_->mu().transpose() << " : "
-       << adj_var_->sigma().diagonal().transpose() << " + " << std::endl
+       << adj_var_->sigma().diagonal().transpose() << " : " << adj_var_->N()
+       << " + " << std::endl
        << "  " << message.mu_.transpose() << " : "
-       << message.Sigma_.diagonal().transpose() << " = ";
+       << message.Sigma_.diagonal().transpose() << " : " << message.N()
+       << " = ";
 
     if (robust_kernel_ and merge_type == GaussianMergeType::Merge) {
       Vector dx = GroupOps::dx(adj_var_->mu(), message.mu_);
@@ -39,7 +41,7 @@ public:
     adj_var_->update({message}, merge_type);
 
     ss << adj_var_->mu().transpose() << " : "
-       << adj_var_->sigma().diagonal().transpose();
+       << adj_var_->sigma().diagonal().transpose() << " : " << adj_var_->N();
 
     return ss.str();
   }

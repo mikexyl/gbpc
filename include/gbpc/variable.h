@@ -87,12 +87,14 @@ public:
 
   auto mu() const { return belief_.mu(); }
   auto sigma() const { return belief_.sigma(); }
+  auto N() const { return belief_.N(); }
 
   auto const &belief() const { return belief_; }
   void relax(double k) { belief_.relax(k); }
 
 protected:
   Gaussian<Dim> belief_;
+  Gaussian<Dim> prior_;
 };
 
 } // namespace gbpc

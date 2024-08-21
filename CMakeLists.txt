@@ -53,14 +53,14 @@ install(DIRECTORY include/gbpc
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/gbpc/gbpcConfigVersion.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/gbpcConfigVersion.cmake"
         VERSION ${PROJECT_VERSION}
         COMPATIBILITY AnyNewerVersion
 )
 
 export(TARGETS gbpc
         NAMESPACE gbpc::
-        FILE "${CMAKE_CURRENT_BINARY_DIR}/gbpc/gbpcTargets.cmake")
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/gbpcTargets.cmake")
 
 set(ConfigPackageLocation lib/cmake/gbpc_net)
 install(EXPORT gbpcTargets
