@@ -69,8 +69,10 @@ public:
     case GaussianMergeType::Mixture: {
 
       for (const auto &message : messages) {
+        auto message_copy = message;
+        message_copy.relax(2);
         // TODO: ! this is not on manifold
-        belief_ = mixtureGaussian(belief_, message, std::nullopt);
+        belief_ = mixtureGaussian(belief_, message_copy, 0.0);
       }
 
     } break;
