@@ -29,14 +29,13 @@ public:
     this->emplace(key, FactorPtr(new FactorT(var, std::move(robust_kernel))));
   }
 
-  std::string
-  sendMessage(Key key, Gaussian<Dim> message,
-              GaussianMergeType merge_type = GaussianMergeType::Merge) {
+  std::string sendMessage(Key key, Gaussian<Dim> message,
+                          GaussianUpdateParams update_params) {
     if (this->find(key) == this->end()) {
       throw NodeNotFoundException(key);
     }
 
-    return this->at(key)->update(message, merge_type);
+    return this->at(key)->update(message, update_params);
   }
 
   auto getNode(Key key) {

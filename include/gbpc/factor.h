@@ -23,7 +23,8 @@ public:
          std::unique_ptr<RobustKernel> robust_kernel = nullptr)
       : adj_var_(adj_var), robust_kernel_(std::move(robust_kernel)) {}
 
-  std::string update(Gaussian<Dim> message, GaussianMergeType merge_type) {
+  std::string update(Gaussian<Dim> message, GaussianUpdateParams params) {
+    auto merge_type = params.type;
     std::stringstream ss;
     ss << "Factor::update: \n"
        << adj_var_->mu().transpose() << " : "

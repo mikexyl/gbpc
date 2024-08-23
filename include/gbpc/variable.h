@@ -11,6 +11,13 @@ namespace gbpc {
 
 enum class GaussianMergeType { Merge, Mixture };
 
+struct GaussianUpdateParams {
+  GaussianMergeType type;
+  double relax;
+  bool use_fixed_alpha;
+  double fixed_alpha;
+};
+
 template <int Dim> class Variable {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -51,7 +58,8 @@ public:
   }
 
   void update(const std::vector<Gaussian<Dim>> &messages,
-              GaussianMergeType merge_type) {
+              GaussianUpdateParams params) {
+    auto merge_type = params.type;
     switch (merge_type) {
     case GaussianMergeType::Merge: {
       auto eta = belief_.eta_;
@@ -70,9 +78,13 @@ public:
 
       for (const auto &message : messages) {
         auto message_copy = message;
-        message_copy.relax(2);
+        message_copy.relax(params.relax);
         // TODO: ! this is not on manifold
-        belief_ = mixtureGaussian(belief_, message_copy, 0.0);
+        std::optional<double> alpha = std::nullopt;
+        if (params.use_fixed_alpha) {
+          alpha = params.fixed_alpha;
+        }
+        belief_ = mixtureGaussian(belief_, message_copy, alpha);
       }
 
     } break;
@@ -85,6 +97,11 @@ public:
     //   mu_ = message.mu_;
     //   Sigma_ = message.Sigma_;
     // }
+  }
+
+  void update(const std::vector<Gaussian<Dim>> &messages,
+              GaussianMergeType merge_type) {
+    update(messages, {merge_type, 1.0});
   }
 
   auto mu() const { return belief_.mu(); }
