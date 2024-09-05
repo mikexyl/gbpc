@@ -111,6 +111,8 @@ public:
   auto const &belief() const { return belief_; }
   void relax(double k) { belief_.relax(k); }
 
+  std::string print() const { return belief_.print(); }
+
 protected:
   Gaussian<Dim> belief_;
   Gaussian<Dim> prior_;

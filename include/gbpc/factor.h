@@ -19,7 +19,7 @@ public:
   using VariableT = Variable<Dim>;
   using Vector = Eigen::Vector<double, Dim>;
 
-  Factor(VariableT::Ptr adj_var,
+  Factor(typename VariableT::Ptr adj_var,
          std::unique_ptr<RobustKernel> robust_kernel = nullptr)
       : adj_var_(adj_var), robust_kernel_(std::move(robust_kernel)) {}
 
@@ -50,7 +50,7 @@ public:
   auto adj_var() { return adj_var_; }
 
 protected:
-  VariableT::Ptr adj_var_;
+  typename VariableT::Ptr adj_var_;
 
   std::unique_ptr<RobustKernel> robust_kernel_;
 };
