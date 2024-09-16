@@ -7,22 +7,32 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # set default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+        set(CMAKE_BUILD_TYPE Release)
 endif()
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-add_definitions(-march=native)
 add_compile_options(-Wno-sign-compare)
 
 find_package(Eigen3 REQUIRED)
+message(STATUS "GTSAM dir: ${GTSAM_DIR}")
 find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
 
 find_package(GSL REQUIRED)
 include(FetchContent)
 
-find_package(Matplot++ REQUIRED)
+FetchContent_Declare(matplotplusplus
+        GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus
+        GIT_TAG origin/master)
+FetchContent_MakeAvailable(matplotplusplus)
+
+# fetch tgui
+FetchContent_Declare(tgui
+        GIT_REPOSITORY https://github.com/texus/TGUI.git
+        GIT_TAG v1.5.0)
+set(TGUI_BACKEND SFML_GRAPHICS)
+FetchContent_MakeAvailable(tgui)
 
 set(INCLUDES
         PUBLIC
