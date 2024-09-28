@@ -10,13 +10,19 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 add_definitions(-march=native)
 add_compile_options(-Wno-sign-compare)
 
-# find eigen
 find_package(Eigen3 REQUIRED)
-
 find_package(GTSAM REQUIRED)
+find_package(TBB REQUIRED)
+
+find_package(GSL REQUIRED)
+include(FetchContent)
+
+find_package(Matplot++ REQUIRED)
 
 set(INCLUDES
         PUBLIC
@@ -29,10 +35,13 @@ set(DEPENDENCIES
         PUBLIC
         Eigen3::Eigen
         gtsam
+        TBB::tbb
+        GSL::gsl
 )
 
 add_library(gbpc SHARED
-        src/main.cpp)
+        src/gaussian.cpp
+        src/gbpc.cpp)
 target_include_directories(gbpc
         ${INCLUDES})
 target_link_libraries(gbpc
@@ -40,6 +49,7 @@ target_link_libraries(gbpc
 
 # build tests
 add_subdirectory(tests)
+add_subdirectory(demo)
 
 install(TARGETS gbpc
         EXPORT gbpcTargets

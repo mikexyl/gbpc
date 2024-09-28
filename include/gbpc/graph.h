@@ -3,118 +3,126 @@
 
 #include "gbpc/exceptions.h"
 #include "gbpc/factor.h"
+#include "gbpc/gaussian.h"
 #include "gbpc/variable.h"
+
+using namespace gtsam;
 
 namespace gbpc {
 
 using Key = size_t;
 
-template <int Dim, class GroupOps>
-class Graph : public std::map<size_t, typename Factor<Dim, GroupOps>::Ptr> {
-public:
-  using FactorT = Factor<Dim, GroupOps>;
-  using FactorPtr = typename FactorT::Ptr;
+struct GaussianKeyCompare {
+  bool operator()(const Gaussian::shared_ptr& lhs,
+                  const Gaussian::shared_ptr& rhs) const {
+    return lhs->key() < rhs->key();
+  }
+};
 
+class Graph {
+ public:
   Graph() = default;
 
-  void addNode(Key key, Gaussian<Dim> initial, bool robust,
-               Eigen::Vector<double, Dim> Sigma = {}) {
-    if (this->find(key) != this->end()) {
-      throw NodeAlreadyExistsException(key);
+  auto add(const Factor::shared_ptr& factor) {
+    for (auto const& var : factor->adj_vars()) {
+      vars_.emplace(var->key(), var);
     }
 
-    auto var = std::make_shared<Variable<Dim>>(initial);
-    std::unique_ptr<Huber<Dim>> robust_kernel =
-        robust ? std::make_unique<Huber<Dim>>(Sigma, Sigma * 2) : nullptr;
-    this->emplace(key, FactorPtr(new FactorT(var, std::move(robust_kernel))));
+    factors_.insert(factor);
+
+    return factor;
   }
 
-  std::string sendMessage(Key key, Gaussian<Dim> message,
-                          GaussianUpdateParams update_params) {
-    if (this->find(key) == this->end()) {
-      throw NodeNotFoundException(key);
+  auto add(const std::vector<Factor::shared_ptr>& factors) {
+    for (auto const& factor : factors) {
+      add(factor);
+    }
+  }
+
+  template <typename T>
+  Belief<T>* getNode(Key key) {
+    if (vars_.find(key) != vars_.end()) {
+      return static_cast<Variable<T>*>(vars_[key].get());
     }
 
-    return this->at(key)->update(message, update_params);
+    throw NodeNotFoundException(key);
   }
 
-  auto getNode(Key key) {
-    if (this->find(key) == this->end()) {
-      throw NodeNotFoundException(key);
+  std::string print() {
+    std::stringstream ss;
+    ss << "Graph:" << std::endl;
+    ss << "Variables:" << std::endl;
+    for (auto const& [_, var] : vars_) {
+      ss << var->print() << std::endl;
     }
 
-    return this->at(key)->adj_var();
+    ss << "Factors:" << std::endl;
+    for (auto const& factor : factors_) {
+      ss << factor->print() << std::endl;
+    }
+
+    return ss.str();
   }
+
+  void clearFactorMessages() {
+    for (auto const& factor : factors_) {
+      factor->clearMessages();
+    }
+  }
+
+  void clearVariableMessages() {
+    for (auto const& [_, var] : vars_) {
+      var->clearMessages();
+    }
+  }
+
+  void optimize() {
+    for (auto const& factor : factors_) {
+      factor->send();
+    }
+
+    for (auto const& [_, var] : vars_) {
+      var->send();
+    }
+
+    for (auto const& [_, var] : vars_) {
+      var->update();
+    }
+
+    clearFactorMessages();
+    clearVariableMessages();
+  }
+
+  auto const& vars() const { return vars_; }
+  auto const& factors() const { return factors_; }
+  std::vector<Gaussian> solveByGtsam() {
+    NonlinearFactorGraph graph;
+    Values values;
+
+    for (auto const& factor : factors_) {
+      auto gtsam = factor->gtsam();
+      graph.add(*gtsam.first);
+      values.insert_or_assign(*gtsam.second);
+    }
+
+    LevenbergMarquardtOptimizer optimizer(graph, values);
+    auto result = optimizer.optimize();
+    Marginals marginals(graph, result);
+
+    std::vector<Gaussian> gaussians;
+    for (auto const& [key, value] : result) {
+      auto mu = traits<Point2>::Logmap(value.cast<Point2>());
+      auto sigma = marginals.marginalCovariance(key);
+      gaussians.emplace_back(key, mu, sigma, 1);
+    }
+
+    return gaussians;
+  }
+
+ protected:
+  std::unordered_map<Key, Node::shared_ptr> vars_;
+  std::set<Factor::shared_ptr> factors_;
 };
 
-/**
- * @brief Coverage & belief graph
- *
- * @tparam Dim
- * @tparam GroupOps
- */
-template <int Dim, class GroupOps> class CBGraph {
-public:
-  using BeliefGraphT = Graph<Dim, GroupOps>;
-  using GaussianBelief = Gaussian<Dim>;
-  using CoverageGraphT = Graph<Dim, GroupOps>;
-  using GaussianCoverage = Gaussian<Dim>;
-
-  CBGraph() {
-    belief_graph_ = std::make_shared<BeliefGraphT>();
-    coverage_graph_ = std::make_shared<CoverageGraphT>();
-  }
-
-  void addNode(Key key, GaussianBelief initial, GaussianCoverage coverage,
-               bool robust, Eigen::Vector<double, Dim> Sigma = {}) {
-    belief_graph_->addNode(key, initial, robust, Sigma);
-    coverage_graph_->addNode(key, coverage, false);
-  }
-
-  std::string sendMessage(Key key, GaussianBelief message,
-                          GaussianCoverage coverage) {
-    throw std::runtime_error("WIP");
-    // std::stringstream ss;
-
-    // double hellinger =
-    //     coverage_graph_->getNode(key)->belief().hellingerDistance(coverage);
-
-    // ss << "Hellinger: " << hellinger << std::endl;
-
-    // static constexpr float kOverlapEpsilon =
-    //     std::numeric_limits<double>::epsilon();
-
-    // // if the var's coverage is smaller than the message's coverage, relax
-    // the
-    // // var
-    // auto node_norm = coverage_graph_->getNode(key)->sigma().norm();
-    // auto message_norm = coverage.sigma().norm();
-    // auto k_norm = node_norm / message_norm;
-    // k_norm = std::fmin(k_norm, 1.0f);
-
-    // float k_hellinger = 0.5 + 0.5 * hellinger;
-
-    // belief_graph_->getNode(key)->relax(k_norm + k_hasfasfllinger);
-    // message.relax(k_hellinger);
-
-    // ss << coverage_graph_->sendMessage(key, coverage,
-    //                                    GaussianMergeType::Mixture)
-    //    << std::endl;
-
-    // ss << belief_graph_->sendMessage(key, message, GaussianMergeType::Merge)
-    //    << std::endl;
-
-    // return ss.str();
-  }
-
-  auto getNodeBelief(Key key) { return belief_graph_->getNode(key); }
-
-  auto getNodeCoverage(Key key) { return coverage_graph_->getNode(key); }
-
-private:
-  std::shared_ptr<BeliefGraphT> belief_graph_;
-  std::shared_ptr<CoverageGraphT> coverage_graph_;
-};
-
-} // namespace gbpc
-#endif // GBPC_GRAPH
+}  // namespace gbpc
+#endif  // GBPC_GRAPH
