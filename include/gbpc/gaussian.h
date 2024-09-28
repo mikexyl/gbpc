@@ -95,6 +95,12 @@ public:
   auto mu() const { return mu_; }
   auto sigma() const { return Sigma_; }
 
+  std::string print() const {
+    std::stringstream ss;
+    ss << "mu: " << mu_.transpose() << " Sigma: " << Sigma_ << " N: " << N_;
+    return ss.str();
+  }
+
   Eigen::Vector<double, Dim> mu_, eta_;
   Eigen::Matrix<double, Dim, Dim> Sigma_, lambda_;
   size_t N_;
