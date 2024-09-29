@@ -12,4 +12,6 @@ set(gbpc_FOUND TRUE)
 set(gbpc_INCLUDE_DIRS ${gbpc_INCLUDE_DIR})
 set(gbpc_LIBRARIES ${gbpc_LIBRARY} Eigen3::Eigen)
 
+find_package(GSL REQUIRED)
+
 include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")

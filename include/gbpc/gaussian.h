@@ -24,6 +24,13 @@ namespace gbpc {
 
 enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
 
+struct GaussianUpdateParams {
+  GaussianMergeType type;
+  double relax;
+  bool use_fixed_alpha;
+  double fixed_alpha;
+};
+
 class Gaussian {
  public:
   using shared_ptr = std::shared_ptr<Gaussian>;
@@ -142,7 +149,7 @@ class Gaussian {
       alpha = force_alpha.value();
     } else {
       if (gauss1.N() == 0 and gauss2.N() == 0) {
-        throw std::runtime_error("N is zero");
+        return gauss2;
       } else if (gauss1.N() == 0) {
         return gauss2;
       } else if (gauss2.N() == 0) {
@@ -200,12 +207,12 @@ class Gaussian {
   void replace(const Gaussian& other) { *this = other; }
 
   void update(const std::vector<Gaussian>& messages,
-              GaussianMergeType merge_type) {
-    switch (merge_type) {
+              GaussianUpdateParams params) {
+    switch (params.type) {
       case GaussianMergeType::Merge:
       case GaussianMergeType::MergeRobust: {
         for (auto message : messages) {
-          if (merge_type == GaussianMergeType::MergeRobust) {
+          if (params.type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
             double k = std::max(0.1, 1 - hellinger);
             message.relax(k);
@@ -217,7 +224,13 @@ class Gaussian {
       case GaussianMergeType::Mixture: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
-          this->replace(mixtureGaussian(*this, message));
+          auto message_copy = message;
+          message_copy.relax(params.relax);
+          this->replace(mixtureGaussian(
+              *this,
+              message_copy,
+              params.use_fixed_alpha ? std::optional<double>(params.fixed_alpha)
+                                     : std::nullopt));
         }
       } break;
       case GaussianMergeType::Replace: {
@@ -319,7 +332,8 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     // update belief
     for (auto const& [_, message] : messages_) {
       assert(message.key() == this->key_);
-      this->Gaussian::update({message}, GaussianMergeType::MergeRobust);
+      this->Gaussian::update({message},
+                             {.type = GaussianMergeType::MergeRobust});
     }
   }
 
@@ -352,6 +366,8 @@ class Belief : public Node {
       const Node::shared_ptr& node = nullptr) override {
     return std::nullopt;
   }
+
+  VALUE value() const { return traits<VALUE>::Expmap(mu_); }
 
   static Gaussian optimizeWithGtsam(const std::vector<This>& beliefs) {
     NonlinearFactorGraph graph;

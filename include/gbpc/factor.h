@@ -144,7 +144,8 @@ class PriorFactor : public Factor {
 
   Gaussian prior() const override { return static_cast<Gaussian>(*this); }
 
-  std::string update(const Gaussian& message, GaussianMergeType merge_type) {
+  std::string update(const Gaussian& message,
+                     GaussianUpdateParams update_params) {
     std::stringstream ss;
     ss << "Factor::update: \n"
        << var()->mu().transpose() << " : "
@@ -152,7 +153,7 @@ class PriorFactor : public Factor {
        << "  " << message.mu().transpose() << " : "
        << message.Sigma().diagonal().transpose() << " = ";
 
-    varAsGaussian()->update({message}, merge_type);
+    varAsGaussian()->update({message}, update_params);
 
     ss << var()->mu().transpose() << " : "
        << var()->Sigma().diagonal().transpose();

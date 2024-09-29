@@ -10,8 +10,6 @@ using namespace gtsam;
 
 namespace gbpc {
 
-using Key = size_t;
-
 struct GaussianKeyCompare {
   bool operator()(const Gaussian::shared_ptr& lhs,
                   const Gaussian::shared_ptr& rhs) const {
@@ -39,10 +37,21 @@ class Graph {
     }
   }
 
-  template <typename T>
-  Belief<T>* getNode(Key key) {
+  template <typename T = Gaussian>
+  auto getVar(Key key) const {
     if (vars_.find(key) != vars_.end()) {
-      return static_cast<Variable<T>*>(vars_[key].get());
+      return std::dynamic_pointer_cast<T>(vars_.at(key));
+    }
+
+    throw NodeNotFoundException(key);
+  }
+
+  template <typename T>
+  auto getFactor(Key key) const {
+    for (auto const& factor : factors_) {
+      if (factor->key() == key) {
+        return std::dynamic_pointer_cast<T>(factor);
+      }
     }
 
     throw NodeNotFoundException(key);
@@ -92,6 +101,8 @@ class Graph {
     clearFactorMessages();
     clearVariableMessages();
   }
+
+  bool contains(Key key) const { return vars_.find(key) != vars_.end(); }
 
   auto const& vars() const { return vars_; }
   auto const& factors() const { return factors_; }
