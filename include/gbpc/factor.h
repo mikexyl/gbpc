@@ -144,8 +144,7 @@ class PriorFactor : public Factor {
 
   Gaussian prior() const override { return static_cast<Gaussian>(*this); }
 
-  std::string update(const Gaussian& message,
-                     GaussianUpdateParams update_params) {
+  UpdateResult update(const Gaussian& message, UpdateParams update_params) {
     std::stringstream ss;
     ss << "Factor::update: \n"
        << var()->mu().transpose() << " : "
@@ -153,12 +152,14 @@ class PriorFactor : public Factor {
        << "  " << message.mu().transpose() << " : "
        << message.Sigma().diagonal().transpose() << " = ";
 
-    varAsGaussian()->update({message}, update_params);
+    UpdateResult results;
+    varAsGaussian()->update({message}, update_params, &results);
 
     ss << var()->mu().transpose() << " : "
        << var()->Sigma().diagonal().transpose();
 
-    return ss.str();
+    results.message = ss.str();
+    return results;
   }
 
   gtsam::GraphAndValues gtsam() override {

@@ -24,11 +24,18 @@ namespace gbpc {
 
 enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
 
-struct GaussianUpdateParams {
+struct UpdateParams {
   GaussianMergeType type;
   double relax;
   bool use_fixed_alpha;
   double fixed_alpha;
+  float belief_change_threshold;
+};
+
+struct UpdateResult {
+  enum Status { Success, Failed };
+  std::vector<Status> status;
+  std::string message;
 };
 
 class Gaussian {
@@ -207,7 +214,8 @@ class Gaussian {
   void replace(const Gaussian& other) { *this = other; }
 
   void update(const std::vector<Gaussian>& messages,
-              GaussianUpdateParams params) {
+              UpdateParams params,
+              UpdateResult* result) {
     switch (params.type) {
       case GaussianMergeType::Merge:
       case GaussianMergeType::MergeRobust: {
@@ -219,13 +227,21 @@ class Gaussian {
           }
           this->merge(message);
         }
-
       } break;
       case GaussianMergeType::Mixture: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
           auto message_copy = message;
           message_copy.relax(params.relax);
+
+          float distance = this->hellingerDistance(message);
+          if (distance < params.belief_change_threshold) {
+            result->status.push_back(UpdateResult::Failed);
+            continue;
+          } else {
+            result->status.push_back(UpdateResult::Success);
+          }
+
           this->replace(mixtureGaussian(
               *this,
               message_copy,
@@ -332,8 +348,8 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     // update belief
     for (auto const& [_, message] : messages_) {
       assert(message.key() == this->key_);
-      this->Gaussian::update({message},
-                             {.type = GaussianMergeType::MergeRobust});
+      this->Gaussian::update(
+          {message}, {.type = GaussianMergeType::MergeRobust}, nullptr);
     }
   }
 
