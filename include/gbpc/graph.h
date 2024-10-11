@@ -47,7 +47,7 @@ class Graph {
   }
 
   template <typename T>
-  auto getFactor(Key key) const {
+  T::shared_ptr getFactor(Key key) const {
     for (auto const& factor : factors_) {
       if (factor->key() == key) {
         return std::dynamic_pointer_cast<T>(factor);

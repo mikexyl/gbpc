@@ -62,8 +62,8 @@ class BetweenFactor : public Factor {
   using This = BetweenFactor<VALUE>;
   using shared_ptr = std::shared_ptr<This>;
   using AdjVar = Variable<VALUE>;
-  using Belief = Belief<VALUE>;
-  using Message = Belief;
+  using BeliefT = Belief<VALUE>;
+  using Message = BeliefT;
 
   explicit BetweenFactor(const Message& measured) : Factor(measured) {}
 
@@ -124,10 +124,10 @@ class PriorFactor : public Factor {
   using shared_ptr = std::shared_ptr<This>;
 
   using AdjVar = Variable<VALUE>;
-  using Belief = Belief<VALUE>;
-  using Message = Belief;
+  using BeliefT = Belief<VALUE>;
+  using Message = BeliefT;
 
-  explicit PriorFactor(const Belief& prior)
+  explicit PriorFactor(const BeliefT& prior)
       : Factor(static_cast<Gaussian>(prior)) {}
 
   Variable<VALUE>* var() {
