@@ -12,7 +12,9 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
+        "GBPC_BUILD_TESTS": "OFF",
+        "GTSAM_DIR": "${sourceDir}/../gtsam/build/isam2_fast_marginal"
       }
     }
   ],

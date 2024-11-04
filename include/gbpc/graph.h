@@ -38,12 +38,17 @@ class Graph {
   }
 
   template <typename T = Gaussian>
-  auto getVar(Key key) const {
+  auto var(Key key) const {
     if (vars_.find(key) != vars_.end()) {
       return std::dynamic_pointer_cast<T>(vars_.at(key));
     }
 
     throw NodeNotFoundException(key);
+  }
+
+  template <typename T = Gaussian>
+  auto getVar(Key key) const {
+    return var<T>(key);
   }
 
   template <typename T>
@@ -105,6 +110,16 @@ class Graph {
   bool contains(Key key) const { return vars_.find(key) != vars_.end(); }
 
   auto const& vars() const { return vars_; }
+
+  KeySet keys() const {
+    KeySet keys;
+    for (auto const& [key, _] : vars_) {
+      keys.insert(key);
+    }
+
+    return keys;
+  }
+
   auto const& factors() const { return factors_; }
   std::vector<Gaussian> solveByGtsam() {
     NonlinearFactorGraph graph;

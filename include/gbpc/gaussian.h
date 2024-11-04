@@ -25,11 +25,11 @@ namespace gbpc {
 enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
 
 struct UpdateParams {
-  GaussianMergeType type;
-  double relax;
-  bool use_fixed_alpha;
-  double fixed_alpha;
-  float belief_change_threshold;
+  GaussianMergeType type = GaussianMergeType::Mixture;
+  double relax = 1.0;
+  bool use_fixed_alpha = false;
+  double fixed_alpha = 0;
+  float belief_change_threshold = 0.0;
 };
 
 struct UpdateResult {
@@ -174,7 +174,8 @@ class Gaussian {
                        (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
 
     size_t N1 = gauss1.N(), N2 = gauss2.N();
-    size_t weighted_N = (N1 * N1 + N2 * N2) / (N1 + N2);
+    size_t weighted_N =
+        (N1 * N1 + N2 * N2) / (N1 + N2 + 1);  // + 1 to avoid division by zero
 
     return Gaussian(key, mu_mix, Sigma_mix, weighted_N);
   }
@@ -220,6 +221,14 @@ class Gaussian {
       case GaussianMergeType::Merge:
       case GaussianMergeType::MergeRobust: {
         for (auto message : messages) {
+          float distance = this->hellingerDistance(message);
+          if (distance < params.belief_change_threshold) {
+            result->status.push_back(UpdateResult::Failed);
+            continue;
+          } else {
+            result->status.push_back(UpdateResult::Success);
+          }
+
           if (params.type == GaussianMergeType::MergeRobust) {
             double hellinger = this->hellingerDistance(message);
             double k = std::max(0.1, 1 - hellinger);
