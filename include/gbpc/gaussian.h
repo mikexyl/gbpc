@@ -284,6 +284,13 @@ class Gaussian {
 
   bool empty() const { return mu_.size() == 0; }
 
+  Gaussian inverse(Key key) const {
+    auto mu = -mu_;
+    auto Sigma = Sigma_.inverse();
+
+    return Gaussian(key, mu, Sigma, N_);
+  }
+
  protected:
   Eigen::VectorXd mu_, eta_;
   Eigen::MatrixXd Sigma_, lambda_;
