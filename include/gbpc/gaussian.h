@@ -90,6 +90,40 @@ class Gaussian {
     return hellingerDistance(mu_, other.mu_, Sigma_, other.Sigma_);
   }
 
+  static double KLDivergence(const Eigen::VectorXd& mu1,
+                             const Eigen::VectorXd& mu2,
+                             const Eigen::MatrixXd& cov1,
+                             const Eigen::MatrixXd& cov2) {
+    // Check that dimensions match
+    assert(mu1.size() == mu2.size() && "Means must be of the same dimension");
+    assert(cov1.rows() == cov1.cols() && cov2.rows() == cov2.cols() &&
+           cov1.rows() == mu1.size() &&
+           "Covariances must be square and match mean dimensions");
+
+    int k = mu1.size();
+
+    // Compute the inverse and determinant of cov2
+    Eigen::MatrixXd cov2_inv = cov2.inverse();
+    double det_cov1 = cov1.determinant();
+    double det_cov2 = cov2.determinant();
+
+    // Compute the trace term
+    double trace_term = (cov2_inv * cov1).trace();
+
+    // Compute the quadratic term
+    Eigen::VectorXd diff = mu2 - mu1;
+    double quadratic_term = diff.transpose() * cov2_inv * diff;
+
+    // Compute the log-determinant term
+    double log_det_term = std::log(det_cov2 / det_cov1);
+
+    // Calculate the KL divergence
+    double kl_divergence =
+        0.5 * (trace_term + quadratic_term - k + log_det_term);
+
+    return kl_divergence;
+  }
+
   static double hellingerDistance(const Eigen::VectorXd& mu1,
                                   const Eigen::VectorXd& mu2,
                                   const Eigen::MatrixXd& cov1,
