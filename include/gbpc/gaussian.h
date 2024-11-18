@@ -35,6 +35,7 @@ struct UpdateParams {
 struct UpdateResult {
   enum Status { Success, Failed };
   std::vector<Status> status;
+  std::vector<double> change;
   std::string message;
 };
 
@@ -88,6 +89,10 @@ class Gaussian {
 
   double hellingerDistance(const This& other) const {
     return hellingerDistance(mu_, other.mu_, Sigma_, other.Sigma_);
+  }
+
+  double KLDivergence(const This& other) const {
+    return KLDivergence(mu_, other.mu_, Sigma_, other.Sigma_);
   }
 
   static double KLDivergence(const Eigen::VectorXd& mu1,
@@ -277,8 +282,9 @@ class Gaussian {
           auto message_copy = message;
           message_copy.relax(params.relax);
 
-          float distance = this->hellingerDistance(message);
-          if (distance < params.belief_change_threshold) {
+          float diff = message.KLDivergence(*this);
+          result->change.push_back(diff);
+          if (diff < params.belief_change_threshold) {
             result->status.push_back(UpdateResult::Failed);
             continue;
           } else {
@@ -295,6 +301,8 @@ class Gaussian {
       case GaussianMergeType::Replace: {
         auto message = messages.front();
         this->replace(message);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
       } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");

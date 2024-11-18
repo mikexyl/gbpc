@@ -37,6 +37,11 @@ class Graph {
     }
   }
 
+  template <class VALUE>
+  void add(const Variable<VALUE>::shared_ptr& var) {
+    vars_.emplace(var->key(), var);
+  }
+
   template <typename T = Gaussian>
   auto var(Key key) const {
     if (vars_.find(key) != vars_.end()) {
