@@ -17,12 +17,26 @@
         "GBPC_BUILD_MATLAB": "OFF",
         "GTSAM_DIR": "${sourceDir}/../gtsam/build/isam2_fast_marginal"
       }
+    },
+    {
+      "name": "config-Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "inherits": "config-Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "build-Release",
       "configurePreset": "config-Release",
+      "jobs": 12
+    },
+    {
+      "name": "build-Debug",
+      "configurePreset": "config-Debug",
       "jobs": 12
     }
   ]

@@ -44,6 +44,12 @@ class Factor : public Node {
     return keys;
   }
 
+  virtual void update(const std::vector<Gaussian>& messages,
+                      UpdateParams params,
+                      UpdateResult* result) {
+    throw "Factor::update not implemented";
+  };
+
   virtual gtsam::GraphAndValues gtsam() = 0;
 
  protected:
@@ -134,9 +140,7 @@ class PriorFactor : public Factor {
     return static_cast<Variable<VALUE>*>(adj_vars()[0].get());
   }
 
-  Gaussian* varAsGaussian() {
-    return static_cast<Gaussian*>(adj_vars()[0].get());
-  }
+  BeliefT* varAsBelief() { return static_cast<BeliefT*>(adj_vars()[0].get()); }
 
   std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
     throw "should never be called";
@@ -153,7 +157,7 @@ class PriorFactor : public Factor {
        << message.Sigma().diagonal().transpose() << " = ";
 
     UpdateResult results;
-    varAsGaussian()->update({message}, update_params, &results);
+    varAsBelief()->update({message}, update_params, &results);
 
     ss << var()->mu().transpose() << " : "
        << var()->Sigma().diagonal().transpose();

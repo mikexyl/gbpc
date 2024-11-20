@@ -22,7 +22,7 @@ using namespace gtsam;
 
 namespace gbpc {
 
-enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace };
+enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace, Step };
 
 struct UpdateParams {
   GaussianMergeType type = GaussianMergeType::Mixture;
@@ -30,6 +30,7 @@ struct UpdateParams {
   bool use_fixed_alpha = false;
   double fixed_alpha = 0;
   float belief_change_threshold = 0.0;
+  double step_size = 0.001;
 };
 
 struct UpdateResult {
@@ -253,63 +254,6 @@ class Gaussian {
 
   void replace(const Gaussian& other) { *this = other; }
 
-  void update(const std::vector<Gaussian>& messages,
-              UpdateParams params,
-              UpdateResult* result) {
-    switch (params.type) {
-      case GaussianMergeType::Merge:
-      case GaussianMergeType::MergeRobust: {
-        for (auto message : messages) {
-          float distance = this->hellingerDistance(message);
-          if (distance < params.belief_change_threshold) {
-            result->status.push_back(UpdateResult::Failed);
-            continue;
-          } else {
-            result->status.push_back(UpdateResult::Success);
-          }
-
-          if (params.type == GaussianMergeType::MergeRobust) {
-            double hellinger = this->hellingerDistance(message);
-            double k = std::max(0.1, 1 - hellinger);
-            message.relax(k);
-          }
-          this->merge(message);
-        }
-      } break;
-      case GaussianMergeType::Mixture: {
-        for (const auto& message : messages) {
-          // TODO: ! this is not on manifold
-          auto message_copy = message;
-          message_copy.relax(params.relax);
-
-          float diff = message.KLDivergence(*this);
-          result->change.push_back(diff);
-          if (diff < params.belief_change_threshold) {
-            result->status.push_back(UpdateResult::Failed);
-            continue;
-          } else {
-            result->status.push_back(UpdateResult::Success);
-          }
-
-          this->replace(mixtureGaussian(
-              *this,
-              message_copy,
-              params.use_fixed_alpha ? std::optional<double>(params.fixed_alpha)
-                                     : std::nullopt));
-        }
-      } break;
-      case GaussianMergeType::Replace: {
-        auto message = messages.front();
-        this->replace(message);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
-      } break;
-      default:
-        throw std::runtime_error("Unknown GaussianMergeType");
-        break;
-    }
-  }
-
   std::string print() const {
     std::stringstream ss;
     ss << "key: " << key_ << std::endl;
@@ -331,6 +275,11 @@ class Gaussian {
     auto Sigma = Sigma_.inverse();
 
     return Gaussian(key, mu, Sigma, N_);
+  }
+
+  void updateMu(const Vector& mu) {
+    mu_ = mu;
+    updateCanonical();
   }
 
  protected:
@@ -406,10 +355,13 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     // update belief
     for (auto const& [_, message] : messages_) {
       assert(message.key() == this->key_);
-      this->Gaussian::update(
-          {message}, {.type = GaussianMergeType::MergeRobust}, nullptr);
+      this->update({message}, {.type = GaussianMergeType::Step}, nullptr);
     }
   }
+
+  virtual void update(const std::vector<Gaussian>& messages,
+                      UpdateParams params,
+                      UpdateResult* result) = 0;
 
  protected:
   std::map<shared_ptr, Gaussian> messages_;
@@ -467,6 +419,103 @@ class Belief : public Node {
     auto mu = result.at<VALUE>(key);
 
     return Gaussian(key, mu, cov, 0);
+  }
+
+  void step(This const& other, double step_size) {
+    auto mu_node = traits<VALUE>::Expmap(mu_);
+    auto mu_fn = traits<VALUE>::Expmap(other.mu_);
+
+    typename VALUE::Jacobian H_tau_mu_fn, H_tau_mu_node;
+    auto tau0_fn =
+        traits<VALUE>::Between(mu_node, mu_fn, H_tau_mu_node, H_tau_mu_fn);
+
+    if (tau0_fn.equals(traits<VALUE>::Identity(), 1e-3)) {
+      return;
+    }
+
+    Eigen::Matrix<double, 6, 6> Lambda0_fn =
+        H_tau_mu_fn.transpose() * other.Lambda() * H_tau_mu_fn;
+    Eigen::Matrix<double, 6, 1> tau0_fn_ = traits<VALUE>::Logmap(tau0_fn);
+    typename VALUE::TangentVector tau_plus = Lambda0_fn * tau0_fn_ * step_size;
+    auto mu_node_new = traits<VALUE>::Retract(mu_node, tau_plus);
+    auto Lambda_plus = Lambda0_fn;
+
+    typename VALUE::Jacobian H_mu_new_tau_plus, H_mu_new_mu_0;
+    mu_node_new = traits<VALUE>::Retract(
+        mu_node, tau_plus, H_mu_new_mu_0, H_mu_new_tau_plus);
+
+    auto Lambda_new =
+        H_mu_new_tau_plus.transpose() * Lambda_plus * H_mu_new_tau_plus;
+
+    mu_ = traits<VALUE>::Logmap(mu_node_new);
+    Sigma_ = Lambda_new.inverse();
+
+    // std::cout << "lambda_plus: " << Lambda_plus << std::endl;
+
+    this->updateCanonical();
+  }
+
+  void update(const std::vector<Gaussian>& messages,
+              UpdateParams params,
+              UpdateResult* result) {
+    switch (params.type) {
+      case GaussianMergeType::Merge:
+      case GaussianMergeType::MergeRobust: {
+        for (auto message : messages) {
+          float distance = this->hellingerDistance(message);
+          if (distance < params.belief_change_threshold) {
+            result->status.push_back(UpdateResult::Failed);
+            continue;
+          } else {
+            result->status.push_back(UpdateResult::Success);
+          }
+
+          if (params.type == GaussianMergeType::MergeRobust) {
+            double hellinger = this->hellingerDistance(message);
+            double k = std::max(0.1, 1 - hellinger);
+            message.relax(k);
+          }
+          this->merge(message);
+        }
+      } break;
+      case GaussianMergeType::Mixture: {
+        for (const auto& message : messages) {
+          // TODO: ! this is not on manifold
+          auto message_copy = message;
+          message_copy.relax(params.relax);
+
+          float diff = message.KLDivergence(*this);
+          result->change.push_back(diff);
+          if (diff < params.belief_change_threshold) {
+            result->status.push_back(UpdateResult::Failed);
+            continue;
+          } else {
+            result->status.push_back(UpdateResult::Success);
+          }
+
+          this->replace(mixtureGaussian(
+              *this,
+              message_copy,
+              params.use_fixed_alpha ? std::optional<double>(params.fixed_alpha)
+                                     : std::nullopt));
+        }
+      } break;
+      case GaussianMergeType::Replace: {
+        auto message = messages.front();
+        this->replace(message);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
+      case GaussianMergeType::Step: {
+        auto message = messages.front();
+        this->step(message, params.step_size);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
+      default:
+        throw std::runtime_error("Unknown GaussianMergeType");
+        break;
+    }
   }
 };
 
