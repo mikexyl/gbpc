@@ -9,6 +9,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/slam/BetweenFactor.h>
+#include <spdlog/spdlog.h>
 
 #include <Eigen/Eigen>
 #include <concepts>
@@ -22,10 +23,17 @@ using namespace gtsam;
 
 namespace gbpc {
 
-enum class GaussianMergeType { Merge, MergeRobust, Mixture, Replace, Step };
+enum class GaussianMergeType {
+  Merge,
+  MergeRobust,
+  Average,
+  Replace,
+  Step,
+  Contract
+};
 
 struct UpdateParams {
-  GaussianMergeType type = GaussianMergeType::Mixture;
+  GaussianMergeType type = GaussianMergeType::Average;
   double relax = 1.0;
   bool use_fixed_alpha = false;
   double fixed_alpha = 0;
@@ -54,7 +62,7 @@ class Gaussian {
   Gaussian(Key key,
            const Vector& mu,
            const Vector& eta,
-           const Eigen::MatrixXd& Sigma,
+           const Eigen::MatrixXd& Sigma,  // covariance
            const Eigen::MatrixXd& lambda,
            size_t N)
       : mu_(mu), eta_(eta), Sigma_(Sigma), lambda_(lambda), N_(N), key_(key) {}
@@ -86,6 +94,10 @@ class Gaussian {
     N_ = other.N_;
 
     return *this;
+  }
+
+  Gaussian operator-(const This& other) const {
+    return Gaussian(key_, mu_ - other.mu_, Sigma_ + other.Sigma_, N_);
   }
 
   double hellingerDistance(const This& other) const {
@@ -270,13 +282,6 @@ class Gaussian {
 
   bool empty() const { return mu_.size() == 0; }
 
-  Gaussian inverse(Key key) const {
-    auto mu = -mu_;
-    auto Sigma = Sigma_.inverse();
-
-    return Gaussian(key, mu, Sigma, N_);
-  }
-
   void updateMu(const Vector& mu) {
     mu_ = mu;
     updateCanonical();
@@ -380,13 +385,16 @@ class Belief : public Node {
   using Covariance = Matrix;
   using Noise = noiseModel::Gaussian;
 
-  Belief(const Key& key) : Node(key) {}
+  Belief(const Key& key)
+      : Node(key), d_xy_(std::numeric_limits<float>::max()) {}
 
   Belief(const This& other) = default;
-  Belief(const Gaussian& other) : Node(other) {}
+  Belief(const Gaussian& other)
+      : Node(other), d_xy_(std::numeric_limits<float>::max()) {}
 
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
-      : Node(Gaussian(key, mu, Sigma, N)) {}
+      : Node(Gaussian(key, mu, Sigma, N)),
+        d_xy_(std::numeric_limits<float>::max()) {}
 
   virtual std::optional<Gaussian> potential(
       const Node::shared_ptr& node = nullptr) override {
@@ -450,9 +458,22 @@ class Belief : public Node {
     mu_ = traits<VALUE>::Logmap(mu_node_new);
     Sigma_ = Lambda_new.inverse();
 
-    // std::cout << "lambda_plus: " << Lambda_plus << std::endl;
-
     this->updateCanonical();
+  }
+
+  Gaussian inverse(std::optional<Key> key) const {
+    auto new_key = this->key();
+    if (key.has_value()) {
+      new_key = key.value();
+    }
+
+    auto value = traits<VALUE>::Expmap(mu_);
+    typename VALUE::Jacobian J;
+    auto inverse_mu = traits<VALUE>::Logmap(value.inverse(J));
+
+    auto new_Sigma = J * Sigma_ * J.transpose();
+
+    return Gaussian(new_key, inverse_mu, new_Sigma, N_);
   }
 
   void update(const std::vector<Gaussian>& messages,
@@ -478,7 +499,7 @@ class Belief : public Node {
           this->merge(message);
         }
       } break;
-      case GaussianMergeType::Mixture: {
+      case GaussianMergeType::Average: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
           auto message_copy = message;
@@ -512,11 +533,62 @@ class Belief : public Node {
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
+      case GaussianMergeType::Contract: {
+        auto message = messages.front();
+        this->contract(message);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");
         break;
     }
   }
+
+  void contract(const Gaussian& other) {
+    float d_tau_x_tau_y_ = this->KLDivergence(other);
+    Gaussian x_diff = other - (*this);
+
+    // grad_new must be smaller than grad_old_
+    float d_target = d_xy_ * kAlpha;
+    if (d_tau_x_tau_y_ < 1e-6) {
+      return;
+    }
+    if (d_tau_x_tau_y_ <= d_target) {
+      this->replace(other);
+      d_xy_ = d_tau_x_tau_y_;
+      spdlog::debug("initial d_xy_: {}", d_xy_);
+      return;
+    }
+
+    auto mu_d = x_diff.mu();
+    auto Sigma_d = x_diff.Sigma();
+    auto Sigma_1 = this->Sigma();
+
+    float diff = mu_d.transpose() * Sigma_1.inverse() * mu_d;
+    float tr = (Sigma_1.inverse() * Sigma_d).trace();
+    float denom = diff + tr;
+
+    float lambda;
+    if (denom < 1e-6) {
+      lambda = 1;
+    } else {
+      lambda = std::sqrt(2 * d_target / denom);
+    }
+
+    this->mu_ = this->mu() + lambda * mu_d;
+    this->Sigma_ = this->Sigma() + Sigma_d * lambda * lambda;
+
+    spdlog::debug("lambda: {}", lambda);
+
+    updateCanonical();
+
+    d_xy_ = d_target;
+  }
+
+ protected:
+  float d_xy_;
+  static constexpr float kAlpha = 0.9;
 };
 
 }  // namespace gbpc
