@@ -29,7 +29,8 @@ enum class GaussianMergeType {
   Average,
   Replace,
   Step,
-  Contract
+  Contract,
+  ContractPertSigma,
 };
 
 struct UpdateParams {
@@ -535,7 +536,13 @@ class Belief : public Node {
       } break;
       case GaussianMergeType::Contract: {
         auto message = messages.front();
-        this->contract(message);
+        this->contract(message, false);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
+      case GaussianMergeType::ContractPertSigma: {
+        auto message = messages.front();
+        this->contract(message, true);
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
@@ -545,7 +552,7 @@ class Belief : public Node {
     }
   }
 
-  void contract(const Gaussian& other) {
+  void contract(const Gaussian& other, bool use_pert_sigma = true) {
     float d_tau_x_tau_y_ = this->KLDivergence(other);
     Gaussian x_diff = other - (*this);
 
@@ -566,7 +573,10 @@ class Belief : public Node {
     auto Sigma_1 = this->Sigma();
 
     float diff = mu_d.transpose() * Sigma_1.inverse() * mu_d;
-    float tr = (Sigma_1.inverse() * Sigma_d).trace();
+    float tr = 0;
+    if (use_pert_sigma) {
+      tr = (Sigma_1.inverse() * Sigma_d).trace();
+    }
     float denom = diff + tr;
 
     float lambda;
@@ -588,7 +598,7 @@ class Belief : public Node {
 
  protected:
   float d_xy_;
-  static constexpr float kAlpha = 0.9;
+  static constexpr float kAlpha = 0.95;
 };
 
 }  // namespace gbpc
