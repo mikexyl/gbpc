@@ -24,13 +24,14 @@ using namespace gtsam;
 namespace gbpc {
 
 enum class GaussianMergeType {
-  Merge,
+  Merge = 0,
   MergeRobust,
   Average,
   Replace,
   Step,
   Contract,
   ContractPertSigma,
+  ContractBoundedSigma
 };
 
 struct UpdateParams {
@@ -70,6 +71,12 @@ class Gaussian {
   Gaussian(Key key, const Vector& mu, const Eigen::MatrixXd& Sigma, size_t N)
       : mu_(mu), Sigma_(Sigma), N_(N), key_(key) {
     updateCanonical();
+  }
+
+  static Gaussian Random(Key key, size_t dim, size_t N = 1) {
+    Vector mu = Vector::Random(dim);
+    Matrix Sigma = Matrix::Random(dim, dim) * 100;
+    return Gaussian(key, mu, Sigma, N);
   }
 
   static auto ToMoments(const Vector& eta, const Eigen::MatrixXd& Lambda) {
@@ -191,6 +198,11 @@ class Gaussian {
     eta_ *= k;
 
     updateMoments();
+  }
+
+  void shiftMu(const Vector& shift) {
+    mu_ += shift;
+    updateCanonical();
   }
 
   static Gaussian mixtureGaussian(const Gaussian& gauss1,
@@ -387,7 +399,9 @@ class Belief : public Node {
   using Noise = noiseModel::Gaussian;
 
   Belief(const Key& key)
-      : Node(key), d_xy_(std::numeric_limits<float>::max()) {}
+      : Node(key),
+        d_xy_(std::numeric_limits<float>::max()),
+        d_sigma_(std::numeric_limits<float>::max()) {}
 
   Belief(const This& other) = default;
   Belief(const Gaussian& other)
@@ -536,13 +550,19 @@ class Belief : public Node {
       } break;
       case GaussianMergeType::Contract: {
         auto message = messages.front();
-        this->contract(message, false);
+        this->contract(message, false, false);
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
       case GaussianMergeType::ContractPertSigma: {
         auto message = messages.front();
-        this->contract(message, true);
+        this->contract(message, true, false);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
+      case GaussianMergeType::ContractBoundedSigma: {
+        auto message = messages.front();
+        this->contract(message, true, true);
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
@@ -552,18 +572,22 @@ class Belief : public Node {
     }
   }
 
-  void contract(const Gaussian& other, bool use_pert_sigma = true) {
+  void contract(const Gaussian& other,
+                bool use_pert_sigma = true,
+                bool bound_sigma = false) {
     float d_tau_x_tau_y_ = this->KLDivergence(other);
     Gaussian x_diff = other - (*this);
 
     // grad_new must be smaller than grad_old_
     float d_target = d_xy_ * kAlpha;
+    float d_t_sigma = d_sigma_ * kAlpha;
     if (d_tau_x_tau_y_ < 1e-6) {
       return;
     }
     if (d_tau_x_tau_y_ <= d_target) {
       this->replace(other);
       d_xy_ = d_tau_x_tau_y_;
+      d_sigma_ = other.Sigma().norm() - Sigma_.norm();
       spdlog::debug("initial d_xy_: {}", d_xy_);
       return;
     }
@@ -587,18 +611,29 @@ class Belief : public Node {
     }
 
     this->mu_ = this->mu() + lambda * mu_d;
-    this->Sigma_ = this->Sigma() + Sigma_d * lambda * lambda;
+
+    double k_sigma = 1.;
+    if (bound_sigma) {
+      double d_sigma = (Sigma_d).norm() * lambda * lambda;
+      if (d_sigma > d_t_sigma) {
+        k_sigma = d_t_sigma / d_sigma;
+      }
+    }
+
+    this->Sigma_ = this->Sigma() + Sigma_d * lambda * lambda * k_sigma;
 
     spdlog::debug("lambda: {}", lambda);
 
     updateCanonical();
 
     d_xy_ = d_target;
+    d_sigma_ = d_t_sigma;
   }
 
  protected:
   float d_xy_;
-  static constexpr float kAlpha = 0.95;
+  float d_sigma_;
+  static constexpr float kAlpha = 0.9;
 };
 
 }  // namespace gbpc
