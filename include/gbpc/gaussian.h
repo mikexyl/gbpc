@@ -377,7 +377,7 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
     }
   }
 
-  virtual void update(const std::vector<Gaussian>& messages,
+  virtual void update(std::vector<Gaussian> messages,
                       UpdateParams params,
                       UpdateResult* result) = 0;
 
@@ -491,9 +491,14 @@ class Belief : public Node {
     return Gaussian(new_key, inverse_mu, new_Sigma, N_);
   }
 
-  void update(const std::vector<Gaussian>& messages,
+  void update(std::vector<Gaussian> messages,
               UpdateParams params,
-              UpdateResult* result) {
+              UpdateResult* result) override {
+    // relax all message
+    for (auto& message : messages) {
+      message.relax(params.relax);
+    }
+
     switch (params.type) {
       case GaussianMergeType::Merge:
       case GaussianMergeType::MergeRobust: {
@@ -609,6 +614,8 @@ class Belief : public Node {
     } else {
       lambda = std::sqrt(2 * d_target / denom);
     }
+
+    lambda = std::fmin(lambda, 1);
 
     this->mu_ = this->mu() + lambda * mu_d;
 

@@ -44,7 +44,7 @@ class Factor : public Node {
     return keys;
   }
 
-  virtual void update(const std::vector<Gaussian>& messages,
+  virtual void update(std::vector<Gaussian> messages,
                       UpdateParams params,
                       UpdateResult* result) {
     throw "Factor::update not implemented";
