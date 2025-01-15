@@ -617,7 +617,8 @@ class Belief : public Node {
 
     lambda = std::fmin(lambda, 1);
 
-    this->mu_ = this->mu() + lambda * mu_d;
+    this->mu_ = traits<VALUE>::Logmap(traits<VALUE>::Retract(
+        traits<VALUE>::Expmap(this->mu()), mu_d * lambda));
 
     double k_sigma = 1.;
     if (bound_sigma) {
@@ -627,7 +628,10 @@ class Belief : public Node {
       }
     }
 
-    this->Sigma_ = this->Sigma() + Sigma_d * lambda * lambda * k_sigma;
+    this->Sigma_ =
+        this->Sigma() + TransformCovariance<VALUE>(
+                            traits<VALUE>::Expmap(mu_d * lambda))(Sigma_d) *
+                            lambda * lambda * k_sigma;
 
     spdlog::debug("lambda: {}", lambda);
 
