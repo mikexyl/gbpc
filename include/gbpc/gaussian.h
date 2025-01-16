@@ -577,19 +577,37 @@ class Belief : public Node {
     }
   }
 
+  static double Chi2(Gaussian z1, Gaussian z2) {
+    auto d_mu = z1.mu() - z2.mu();
+    auto sigma1 = z1.Sigma();
+    auto sigma2 = z2.Sigma();
+    auto I = sigma1;
+    I.setIdentity();
+    double chi = d_mu.transpose() * sigma2.inverse() * d_mu +
+                 std::pow((sigma2.inverse() * sigma1 - I).trace(), 2);
+    return chi;
+  }
+
   void contract(const Gaussian& other,
                 bool use_pert_sigma = true,
                 bool bound_sigma = false) {
     float d_tau_x_tau_y_ = this->KLDivergence(other);
     Gaussian x_diff = other - (*this);
 
+    float rate = d_tau_x_tau_y_ / d_xy_;
+    float gamma = 0.1;
+    float alpha = 1 / (1 + gamma * rate);
+
+    double chi2 = Chi2(*this, other) + Chi2(other, *this) + 1e-6;
+    chi2 /= 2.0;
+
     // grad_new must be smaller than grad_old_
-    float d_target = d_xy_ * kAlpha;
-    float d_t_sigma = d_sigma_ * kAlpha;
+    float d_target = d_xy_ * alpha;
+    float d_t_sigma = d_sigma_ * alpha;
     if (d_tau_x_tau_y_ < 1e-6) {
       return;
     }
-    if (d_tau_x_tau_y_ <= d_target) {
+    if (d_tau_x_tau_y_ <= d_target or d_tau_x_tau_y_ > 3.0) {
       this->replace(other);
       d_xy_ = d_tau_x_tau_y_;
       d_sigma_ = other.Sigma().norm() - Sigma_.norm();
