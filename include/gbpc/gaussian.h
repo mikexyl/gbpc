@@ -644,7 +644,7 @@ class Belief : public Node {
  protected:
   float d_xy_;
   float d_sigma_;
-  static constexpr float kAlpha = 0.9;
+  static constexpr float kAlpha = 0.8;
 };
 
 }  // namespace gbpc
