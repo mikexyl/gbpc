@@ -15,7 +15,7 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
         "GBPC_BUILD_TESTS": "OFF",
         "GBPC_BUILD_MATLAB": "OFF",
-        "GTSAM_DIR": "${sourceDir}/../gtsam/build/original"
+        "GTSAM_DIR": "${sourceDir}/../gtsam/build/isam2_fast_marginal"
       }
     },
     {

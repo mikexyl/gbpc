@@ -93,7 +93,7 @@ class BetweenFactor : public Factor {
       auto inverse = traits<VALUE>::Inverse(measured);
       auto inverse_mu = traits<VALUE>::Logmap(inverse);
       Gaussian inverse_message(
-          this->key(), inverse_mu, this->Sigma(), this->N());
+          this->key(), inverse_mu, this->Sigma(), this->degree());
       inverse_message.merge(*adj_vars()[1], false);
       return inverse_message;
     }

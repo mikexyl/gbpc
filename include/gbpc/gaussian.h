@@ -57,7 +57,7 @@ class Gaussian {
   using Matrix = Eigen::MatrixXd;
   using This = Gaussian;
 
-  Gaussian() : N_(0) {}
+  Gaussian() : degree_(0) {}
   explicit Gaussian(Key key) : key_(key) {}
   Gaussian(const Gaussian& other) = default;
   Gaussian(Gaussian&& other) = default;
@@ -66,17 +66,25 @@ class Gaussian {
            const Vector& eta,
            const Eigen::MatrixXd& Sigma,  // covariance
            const Eigen::MatrixXd& lambda,
-           size_t N)
-      : mu_(mu), eta_(eta), Sigma_(Sigma), lambda_(lambda), N_(N), key_(key) {}
-  Gaussian(Key key, const Vector& mu, const Eigen::MatrixXd& Sigma, size_t N)
-      : mu_(mu), Sigma_(Sigma), N_(N), key_(key) {
+           size_t degree)
+      : mu_(mu),
+        eta_(eta),
+        Sigma_(Sigma),
+        lambda_(lambda),
+        degree_(degree),
+        key_(key) {}
+  Gaussian(Key key,
+           const Vector& mu,
+           const Eigen::MatrixXd& Sigma,
+           size_t degree)
+      : mu_(mu), Sigma_(Sigma), degree_(degree), key_(key) {
     updateCanonical();
   }
 
-  static Gaussian Random(Key key, size_t dim, size_t N = 1) {
+  static Gaussian Random(Key key, size_t dim, size_t degree = 1) {
     Vector mu = Vector::Random(dim);
     Matrix Sigma = Matrix::Random(dim, dim) * 100;
-    return Gaussian(key, mu, Sigma, N);
+    return Gaussian(key, mu, Sigma, degree);
   }
 
   static auto ToMoments(const Vector& eta, const Eigen::MatrixXd& Lambda) {
@@ -85,7 +93,7 @@ class Gaussian {
     return std::make_pair(mu, Sigma);
   }
 
-  size_t N() const { return N_; }
+  size_t degree() const { return degree_; }
   const Vector& mu() const { return mu_; }
   const Vector& eta() const { return eta_; }
   Matrix Sigma() const { return Sigma_; }
@@ -99,17 +107,18 @@ class Gaussian {
     eta_ = other.eta_;
     Sigma_ = other.Sigma_;
     lambda_ = other.lambda_;
-    N_ = other.N_;
+    degree_ = other.degree_;
 
     return *this;
   }
 
   Gaussian operator-(const This& other) const {
-    return Gaussian(key_, mu_ - other.mu_, Sigma_ + other.Sigma_, N_);
+    return Gaussian(key(), mu() - other.mu(), Sigma(), degree());
   }
 
   double hellingerDistance(const This& other) const {
-    return hellingerDistance(mu_, other.mu_, Sigma_, other.Sigma_);
+    return hellingerDistance(
+        mu_, other.mu_, Sigma_ + other.Sigma(), other.Sigma_);
   }
 
   double KLDivergence(const This& other) const {
@@ -205,10 +214,10 @@ class Gaussian {
     updateCanonical();
   }
 
-  static Gaussian mixtureGaussian(const Gaussian& gauss1,
-                                  const Gaussian& gauss2,
-                                  std::optional<double> force_alpha = 0.5,
-                                  bool expect_same_key = true) {
+  static Gaussian Damp(const Gaussian& gauss1,
+                       const Gaussian& gauss2,
+                       std::optional<double> force_alpha = 0.5,
+                       bool expect_same_key = true) {
     if (expect_same_key) {
       assert(gauss1.key() == gauss2.key());
     } else {
@@ -220,14 +229,15 @@ class Gaussian {
     if (force_alpha.has_value()) {
       alpha = force_alpha.value();
     } else {
-      if (gauss1.N() == 0 and gauss2.N() == 0) {
+      if (gauss1.degree() == 0 and gauss2.degree() == 0) {
         return gauss2;
-      } else if (gauss1.N() == 0) {
+      } else if (gauss1.degree() == 0) {
         return gauss2;
-      } else if (gauss2.N() == 0) {
+      } else if (gauss2.degree() == 0) {
         return gauss1;
       }
-      alpha = static_cast<double>(gauss1.N()) / (gauss1.N() + gauss2.N());
+      alpha = static_cast<double>(gauss1.degree()) /
+              (gauss1.degree() + gauss2.degree());
     }
 
     auto const &mu1 = gauss1.mu(), mu2 = gauss2.mu();
@@ -238,15 +248,16 @@ class Gaussian {
     Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
                        (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
 
-    size_t N1 = gauss1.N(), N2 = gauss2.N();
-    size_t weighted_N =
-        (N1 * N1 + N2 * N2) / (N1 + N2 + 1);  // + 1 to avoid division by zero
+    size_t degree1 = gauss1.degree(), degree2 = gauss2.degree();
+    size_t weighted_degree =
+        (degree1 * degree1 + degree2 * degree2) /
+        (degree1 + degree2 + 1);  // + 1 to avoid division by zero
 
-    return Gaussian(key, mu_mix, Sigma_mix, weighted_N);
+    return Gaussian(key, mu_mix, Sigma_mix, weighted_degree);
   }
 
   void merge(const Gaussian& other, bool expect_same_key = true) {
-    if (N_ == 0) {
+    if (degree_ == 0) {
       return this->replace(other);
     }
 
@@ -264,8 +275,8 @@ class Gaussian {
 
     lambda_ += other.lambda_;
     eta_ += other.eta_;
-    N_ = std::min(N_, other.N_);
-    N_++;
+    degree_ = std::min(degree_, other.degree_);
+    degree_++;
 
     updateMoments();
   }
@@ -284,7 +295,7 @@ class Gaussian {
     ss << "key: " << key_ << std::endl;
     ss << "mu: " << mu_.transpose() << std::endl;
     ss << "Sigma: " << Sigma_ << std::endl;
-    ss << "N: " << N_ << std::endl;
+    ss << "N: " << degree_ << std::endl;
     return ss.str();
   }
 
@@ -303,7 +314,7 @@ class Gaussian {
  protected:
   Eigen::VectorXd mu_, eta_;
   Eigen::MatrixXd Sigma_, lambda_;
-  size_t N_;
+  size_t degree_;
   Key key_;
 };
 
@@ -407,8 +418,8 @@ class Belief : public Node {
   Belief(const Gaussian& other)
       : Node(other), d_xy_(std::numeric_limits<float>::max()) {}
 
-  Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t N)
-      : Node(Gaussian(key, mu, Sigma, N)),
+  Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t degree)
+      : Node(Gaussian(key, mu, Sigma, degree)),
         d_xy_(std::numeric_limits<float>::max()) {}
 
   virtual std::optional<Gaussian> potential(
@@ -488,7 +499,7 @@ class Belief : public Node {
 
     auto new_Sigma = J * Sigma_ * J.transpose();
 
-    return Gaussian(new_key, inverse_mu, new_Sigma, N_);
+    return Gaussian(new_key, inverse_mu, new_Sigma, degree_);
   }
 
   void update(std::vector<Gaussian> messages,
@@ -534,11 +545,11 @@ class Belief : public Node {
             result->status.push_back(UpdateResult::Success);
           }
 
-          this->replace(mixtureGaussian(
-              *this,
-              message_copy,
-              params.use_fixed_alpha ? std::optional<double>(params.fixed_alpha)
-                                     : std::nullopt));
+          this->replace(Damp(*this,
+                             message_copy,
+                             params.use_fixed_alpha
+                                 ? std::optional<double>(params.fixed_alpha)
+                                 : std::nullopt));
         }
       } break;
       case GaussianMergeType::Replace: {
