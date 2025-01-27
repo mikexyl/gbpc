@@ -606,7 +606,7 @@ class Belief : public Node {
     Gaussian x_diff = other - (*this);
 
     float rate = d_tau_x_tau_y_ / d_xy_;
-    float gamma = 0.1;
+    float gamma = 0.2;
     float alpha = 1 / (1 + gamma * rate);
 
     double chi2 = Chi2(*this, other) + Chi2(other, *this) + 1e-6;
