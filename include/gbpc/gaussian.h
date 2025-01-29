@@ -26,7 +26,7 @@ namespace gbpc {
 enum class GaussianMergeType {
   Merge = 0,
   MergeRobust,
-  Average,
+  Damp,
   Replace,
   Step,
   Contract,
@@ -35,7 +35,7 @@ enum class GaussianMergeType {
 };
 
 struct UpdateParams {
-  GaussianMergeType type = GaussianMergeType::Average;
+  GaussianMergeType type = GaussianMergeType::Damp;
   double relax = 1.0;
   bool use_fixed_alpha = false;
   double fixed_alpha = 0;
@@ -392,9 +392,23 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
                       UpdateParams params,
                       UpdateResult* result) = 0;
 
+  enum class Status { Converging, Reset, Converged };
+  Status status() const { return status_; }
+  float contractionRate() const { return contraction_rate_; }
+  float contractionLambda() const { return contraction_lambda_; }
+  float dxymod() const { return d_xy_mod_; }
+  float dxycurr() const { return d_xy_curr_; }
+
  protected:
   std::map<shared_ptr, Gaussian> messages_;
   std::vector<shared_ptr> neighbors_;
+  Status status_{Node::Status::Reset};
+  float contraction_rate_{1.0};
+  float contraction_lambda_{0.0};
+  float d_xy_{std::numeric_limits<float>::max()};
+  float d_sigma_{std::numeric_limits<float>::max()};
+  float d_xy_mod_{std::numeric_limits<float>::max()};
+  float d_xy_curr_{std::numeric_limits<float>::max()};
 };
 
 template <class VALUE>
@@ -409,18 +423,13 @@ class Belief : public Node {
   using Covariance = Matrix;
   using Noise = noiseModel::Gaussian;
 
-  Belief(const Key& key)
-      : Node(key),
-        d_xy_(std::numeric_limits<float>::max()),
-        d_sigma_(std::numeric_limits<float>::max()) {}
+  Belief(const Key& key) : Node(key) {}
 
   Belief(const This& other) = default;
-  Belief(const Gaussian& other)
-      : Node(other), d_xy_(std::numeric_limits<float>::max()) {}
+  Belief(const Gaussian& other) : Node(other) {}
 
   Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t degree)
-      : Node(Gaussian(key, mu, Sigma, degree)),
-        d_xy_(std::numeric_limits<float>::max()) {}
+      : Node(Gaussian(key, mu, Sigma, degree)) {}
 
   virtual std::optional<Gaussian> potential(
       const Node::shared_ptr& node = nullptr) override {
@@ -530,7 +539,7 @@ class Belief : public Node {
           this->merge(message);
         }
       } break;
-      case GaussianMergeType::Average: {
+      case GaussianMergeType::Damp: {
         for (const auto& message : messages) {
           // TODO: ! this is not on manifold
           auto message_copy = message;
@@ -602,12 +611,39 @@ class Belief : public Node {
   void contract(const Gaussian& other,
                 bool use_pert_sigma = true,
                 bool bound_sigma = false) {
-    float d_tau_x_tau_y_ = this->KLDivergence(other);
+    float d_tau_x_tau_y = this->KLDivergence(other);
+    this->d_xy_curr_ = d_tau_x_tau_y;
+    float d_yx = other.KLDivergence(*this);
     Gaussian x_diff = other - (*this);
+    auto Sigma_d = x_diff.Sigma();
 
-    float rate = d_tau_x_tau_y_ / d_xy_;
+    float rate = d_tau_x_tau_y / d_xy_;
     float gamma = 0.2;
     float alpha = 1 / (1 + gamma * rate);
+    if (d_tau_x_tau_y < 0) {
+      d_tau_x_tau_y = 0;
+      std::cerr << fmt::format("d_tau_x_tau_y_({}) is negative, {},{} \n",
+                               d_tau_x_tau_y,
+                               d_xy_,
+                               rate);
+    }
+    if (not(alpha > -std::numeric_limits<float>::epsilon() &&
+            alpha < 1 + std::numeric_limits<float>::epsilon())) {
+      throw std::runtime_error(
+          fmt::format("alpha({}) is not between 0 and 1, {},{},{}",
+                      alpha,
+                      d_tau_x_tau_y,
+                      d_xy_,
+                      rate));
+    }
+    if (std::abs(rate - 1.0) < 1e-2) {
+      // when the adaptive alpha is too small, which means current rate of
+      // convergence is too small
+      this->status_ = Node::Status::Converged;
+    }
+    this->contraction_rate_ = rate;
+    // clip alpha to be between 0.8 and 0.99
+    alpha = std::fmax(0.0, std::fmin(1.0, alpha));
 
     double chi2 = Chi2(*this, other) + Chi2(other, *this) + 1e-6;
     chi2 /= 2.0;
@@ -615,19 +651,34 @@ class Belief : public Node {
     // grad_new must be smaller than grad_old_
     float d_target = d_xy_ * alpha;
     float d_t_sigma = d_sigma_ * alpha;
-    if (d_tau_x_tau_y_ < 1e-6) {
+    if ((d_tau_x_tau_y + d_yx) < 1e-3) {
+      this->status_ = Node::Status::Converged;
+      // this->d_xy_ = d_tau_x_tau_y_;
+      // this->d_sigma_ = Sigma_d.norm();
       return;
     }
-    if (d_tau_x_tau_y_ <= d_target or d_tau_x_tau_y_ > 3.0) {
+
+    // reset
+    if (d_yx > 0.2) {
+      this->status_ = Node::Status::Reset;
       this->replace(other);
-      d_xy_ = d_tau_x_tau_y_;
-      d_sigma_ = other.Sigma().norm() - Sigma_.norm();
+      d_xy_ = std::numeric_limits<float>::max();
+      d_sigma_ = std::numeric_limits<float>::max();
+      spdlog::debug("Node {} reset", DefaultKeyFormatter(this->key()));
+      return;
+    }
+
+    // already converging slow enough
+    if (d_tau_x_tau_y <= d_target) {
+      this->status_ = Node::Status::Converged;
+      this->replace(other);
+      d_xy_ = d_tau_x_tau_y;
+      d_sigma_ = Sigma_d.norm();
       spdlog::debug("initial d_xy_: {}", d_xy_);
       return;
     }
 
     auto mu_d = x_diff.mu();
-    auto Sigma_d = x_diff.Sigma();
     auto Sigma_1 = this->Sigma();
 
     float diff = mu_d.transpose() * Sigma_1.inverse() * mu_d;
@@ -646,8 +697,12 @@ class Belief : public Node {
 
     lambda = std::fmin(lambda, 1);
 
+    Gaussian old_belief = *this;
+
     this->mu_ = traits<VALUE>::Logmap(traits<VALUE>::Retract(
         traits<VALUE>::Expmap(this->mu()), mu_d * lambda));
+
+    this->contraction_lambda_ = lambda;
 
     double k_sigma = 1.;
     if (bound_sigma) {
@@ -662,18 +717,17 @@ class Belief : public Node {
                             traits<VALUE>::Expmap(mu_d * lambda))(Sigma_d) *
                             lambda * lambda * k_sigma;
 
-    spdlog::debug("lambda: {}", lambda);
+    spdlog::debug("lambda: {}, d_xy {}, alpha {}", lambda, d_xy_, alpha);
 
     updateCanonical();
 
     d_xy_ = d_target;
     d_sigma_ = d_t_sigma;
-  }
 
- protected:
-  float d_xy_;
-  float d_sigma_;
-  static constexpr float kAlpha = 0.8;
+    this->d_xy_mod_ = old_belief.KLDivergence(*this);
+
+    this->status_ = Node::Status::Converging;
+  }
 };
 
 }  // namespace gbpc
