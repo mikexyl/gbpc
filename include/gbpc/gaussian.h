@@ -398,6 +398,8 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   float contractionLambda() const { return contraction_lambda_; }
   float dxymod() const { return d_xy_mod_; }
   float dxycurr() const { return d_xy_curr_; }
+  float ddxymod() const { return dd_xy_mod_; }
+  float relDdxycurr() const { return rel_dd_xy_curr_; }
 
  protected:
   std::map<shared_ptr, Gaussian> messages_;
@@ -405,10 +407,12 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Status status_{Node::Status::Reset};
   float contraction_rate_{1.0};
   float contraction_lambda_{0.0};
-  float d_xy_{std::numeric_limits<float>::max()};
-  float d_sigma_{std::numeric_limits<float>::max()};
-  float d_xy_mod_{std::numeric_limits<float>::max()};
-  float d_xy_curr_{std::numeric_limits<float>::max()};
+  float d_xy_{1e10};
+  float d_sigma_{1e10};
+  float d_xy_mod_{1e10};
+  float dd_xy_mod_{1e10};
+  float d_xy_curr_{1e10};
+  float rel_dd_xy_curr_{1e10};
 };
 
 template <class VALUE>
@@ -612,12 +616,19 @@ class Belief : public Node {
                 bool use_pert_sigma = true,
                 bool bound_sigma = false) {
     float d_tau_x_tau_y = this->KLDivergence(other);
-    this->d_xy_curr_ = d_tau_x_tau_y;
     float d_yx = other.KLDivergence(*this);
     Gaussian x_diff = other - (*this);
     auto Sigma_d = x_diff.Sigma();
 
-    float rate = d_tau_x_tau_y / d_xy_;
+    float rate = d_tau_x_tau_y / d_xy_curr_;
+    this->rel_dd_xy_curr_ = (d_tau_x_tau_y - d_xy_curr_) / d_xy_curr_;
+    this->d_xy_curr_ = d_tau_x_tau_y;
+    if ((d_tau_x_tau_y + d_yx) < 1e-3) {
+      this->status_ = Node::Status::Converged;
+      // this->d_xy_ = d_tau_x_tau_y_;
+      // this->d_sigma_ = Sigma_d.norm();
+      return;
+    }
     float gamma = 0.2;
     float alpha = 1 / (1 + gamma * rate);
     if (d_tau_x_tau_y < 0) {
@@ -633,7 +644,7 @@ class Belief : public Node {
           fmt::format("alpha({}) is not between 0 and 1, {},{},{}",
                       alpha,
                       d_tau_x_tau_y,
-                      d_xy_,
+                      d_xy_curr_,
                       rate));
     }
     if (std::abs(rate - 1.0) < 1e-2) {
@@ -651,13 +662,6 @@ class Belief : public Node {
     // grad_new must be smaller than grad_old_
     float d_target = d_xy_ * alpha;
     float d_t_sigma = d_sigma_ * alpha;
-    if ((d_tau_x_tau_y + d_yx) < 1e-3) {
-      this->status_ = Node::Status::Converged;
-      // this->d_xy_ = d_tau_x_tau_y_;
-      // this->d_sigma_ = Sigma_d.norm();
-      return;
-    }
-
     // reset
     if (d_yx > 0.2) {
       this->status_ = Node::Status::Reset;
@@ -724,7 +728,9 @@ class Belief : public Node {
     d_xy_ = d_target;
     d_sigma_ = d_t_sigma;
 
+    float old_d_xy_mod = this->d_xy_mod_;
     this->d_xy_mod_ = old_belief.KLDivergence(*this);
+    this->dd_xy_mod_ = this->d_xy_mod_ - old_d_xy_mod;
 
     this->status_ = Node::Status::Converging;
   }
