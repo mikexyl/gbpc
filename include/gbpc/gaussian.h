@@ -31,7 +31,8 @@ enum class GaussianMergeType {
   Step,
   Contract,
   ContractPertSigma,
-  ContractBoundedSigma
+  ContractBoundedSigma,
+  DampContract
 };
 
 struct UpdateParams {
@@ -113,7 +114,13 @@ class Gaussian {
   }
 
   Gaussian operator-(const This& other) const {
-    return Gaussian(key(), mu() - other.mu(), Sigma(), degree());
+    auto epsilon_sigma = Sigma();
+    epsilon_sigma.setIdentity();
+    epsilon_sigma *= 1e-6;
+    return Gaussian(key(),
+                    mu() - other.mu(),
+                    Sigma() - other.Sigma() + epsilon_sigma,
+                    degree());
   }
 
   double hellingerDistance(const This& other) const {
@@ -242,8 +249,8 @@ class Gaussian {
 
     auto const &mu1 = gauss1.mu(), mu2 = gauss2.mu();
     Vector mu_mix = alpha * mu1 + (1 - alpha) * mu2;
-    Matrix mu1mu1t = mu1 * mu1.transpose();
-    Matrix mu2mu2t = mu2 * mu2.transpose();
+    Matrix mu1mu1t = mu1 * mu1.transpose() * 2;
+    Matrix mu2mu2t = mu2 * mu2.transpose() * 2;
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
     Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
                        (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
@@ -577,6 +584,13 @@ class Belief : public Node {
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
+      case gbpc::GaussianMergeType::DampContract: {
+        auto message = messages.front();
+        auto damped_message = Gaussian::Damp(*this, message, 0.5);
+        this->contract(damped_message, true, false);
+        result->change.push_back(message.KLDivergence(*this));
+        result->status.push_back(UpdateResult::Success);
+      } break;
       case GaussianMergeType::Contract: {
         auto message = messages.front();
         this->contract(message, false, false);
@@ -615,35 +629,32 @@ class Belief : public Node {
   void contract(const Gaussian& other,
                 bool use_pert_sigma = true,
                 bool bound_sigma = false) {
-    float d_tau_x_tau_y = this->KLDivergence(other);
+    float dxy_no_eta = this->KLDivergence(other);
     float d_yx = other.KLDivergence(*this);
     Gaussian x_diff = other - (*this);
     auto Sigma_d = x_diff.Sigma();
 
-    float rate = d_tau_x_tau_y / d_xy_curr_;
-    this->rel_dd_xy_curr_ = (d_tau_x_tau_y - d_xy_curr_) / d_xy_curr_;
-    this->d_xy_curr_ = d_tau_x_tau_y;
-    if ((d_tau_x_tau_y + d_yx) < 1e-3) {
+    float rate = dxy_no_eta / d_xy_curr_;
+    this->rel_dd_xy_curr_ = (dxy_no_eta - d_xy_curr_) / d_xy_curr_;
+    this->d_xy_curr_ = dxy_no_eta;
+    if ((dxy_no_eta + d_yx) < 1e-3) {
       this->status_ = Node::Status::Converged;
-      // this->d_xy_ = d_tau_x_tau_y_;
-      // this->d_sigma_ = Sigma_d.norm();
+      this->dd_xy_mod_ = 0;
       return;
     }
     float gamma = 0.2;
     float alpha = 1 / (1 + gamma * rate);
-    if (d_tau_x_tau_y < 0) {
-      d_tau_x_tau_y = 0;
-      std::cerr << fmt::format("d_tau_x_tau_y_({}) is negative, {},{} \n",
-                               d_tau_x_tau_y,
-                               d_xy_,
-                               rate);
+    if (dxy_no_eta < 0) {
+      dxy_no_eta = 0;
+      std::cerr << fmt::format(
+          "d_tau_x_tau_y_({}) is negative, {},{} \n", dxy_no_eta, d_xy_, rate);
     }
     if (not(alpha > -std::numeric_limits<float>::epsilon() &&
             alpha < 1 + std::numeric_limits<float>::epsilon())) {
       throw std::runtime_error(
           fmt::format("alpha({}) is not between 0 and 1, {},{},{}",
                       alpha,
-                      d_tau_x_tau_y,
+                      dxy_no_eta,
                       d_xy_curr_,
                       rate));
     }
@@ -663,21 +674,23 @@ class Belief : public Node {
     float d_target = d_xy_ * alpha;
     float d_t_sigma = d_sigma_ * alpha;
     // reset
-    if (d_yx > 0.2) {
+    if (d_yx > 0.1) {
       this->status_ = Node::Status::Reset;
       this->replace(other);
       d_xy_ = std::numeric_limits<float>::max();
       d_sigma_ = std::numeric_limits<float>::max();
       spdlog::debug("Node {} reset", DefaultKeyFormatter(this->key()));
+      this->dd_xy_mod_ = 1e10;
       return;
     }
 
     // already converging slow enough
-    if (d_tau_x_tau_y <= d_target) {
+    if (dxy_no_eta <= d_target) {
       this->status_ = Node::Status::Converged;
       this->replace(other);
-      d_xy_ = d_tau_x_tau_y;
+      d_xy_ = dxy_no_eta;
       d_sigma_ = Sigma_d.norm();
+      this->dd_xy_mod_ = dxy_no_eta - this->d_xy_mod_;
       spdlog::debug("initial d_xy_: {}", d_xy_);
       return;
     }
