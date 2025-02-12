@@ -649,14 +649,23 @@ class Belief : public Node {
       std::cerr << fmt::format(
           "d_tau_x_tau_y_({}) is negative, {},{} \n", dxy_no_eta, d_xy_, rate);
     }
+    bool reset = false;
     if (not(alpha > -std::numeric_limits<float>::epsilon() &&
             alpha < 1 + std::numeric_limits<float>::epsilon())) {
-      throw std::runtime_error(
-          fmt::format("alpha({}) is not between 0 and 1, {},{},{}",
-                      alpha,
-                      dxy_no_eta,
-                      d_xy_curr_,
-                      rate));
+      spdlog::warn("alpha({}) is not between 0 and 1, {},{},{}",
+                   alpha,
+                   dxy_no_eta,
+                   d_xy_curr_,
+                   rate);
+      reset = true;
+      this->status_ = Node::Status::Reset;
+      this->Sigma_.setIdentity();
+      this->Sigma_ *= 1e4;
+      updateCanonical();
+      d_xy_ = std::numeric_limits<float>::max();
+      d_sigma_ = std::numeric_limits<float>::max();
+      this->dd_xy_mod_ = 1e10;
+      return;
     }
     if (std::abs(rate - 1.0) < 1e-2) {
       // when the adaptive alpha is too small, which means current rate of
@@ -674,12 +683,11 @@ class Belief : public Node {
     float d_target = d_xy_ * alpha;
     float d_t_sigma = d_sigma_ * alpha;
     // reset
-    if (d_yx > 0.1) {
+    if (d_yx > 0.1 or reset) {
       this->status_ = Node::Status::Reset;
       this->replace(other);
       d_xy_ = std::numeric_limits<float>::max();
       d_sigma_ = std::numeric_limits<float>::max();
-      spdlog::debug("Node {} reset", DefaultKeyFormatter(this->key()));
       this->dd_xy_mod_ = 1e10;
       return;
     }
@@ -691,7 +699,6 @@ class Belief : public Node {
       d_xy_ = dxy_no_eta;
       d_sigma_ = Sigma_d.norm();
       this->dd_xy_mod_ = dxy_no_eta - this->d_xy_mod_;
-      spdlog::debug("initial d_xy_: {}", d_xy_);
       return;
     }
 
@@ -733,8 +740,6 @@ class Belief : public Node {
         this->Sigma() + TransformCovariance<VALUE>(
                             traits<VALUE>::Expmap(mu_d * lambda))(Sigma_d) *
                             lambda * lambda * k_sigma;
-
-    spdlog::debug("lambda: {}, d_xy {}, alpha {}", lambda, d_xy_, alpha);
 
     updateCanonical();
 
