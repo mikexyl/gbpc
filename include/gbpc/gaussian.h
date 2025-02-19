@@ -42,6 +42,8 @@ struct UpdateParams {
   double fixed_alpha = 0;
   float belief_change_threshold = 0.0;
   double step_size = 0.001;
+  float gamma = 0.1;
+  float d_reset = 0.1;
 };
 
 struct UpdateResult {
@@ -252,8 +254,8 @@ class Gaussian {
     Matrix mu1mu1t = mu1 * mu1.transpose() * 2;
     Matrix mu2mu2t = mu2 * mu2.transpose() * 2;
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
-    Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
-                       (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
+    Matrix Sigma_mix =gauss2.Sigma();
+        // alpha * (gauss1.Sigma()) + (1 - alpha) * (gauss2.Sigma());
 
     size_t degree1 = gauss1.degree(), degree2 = gauss2.degree();
     size_t weighted_degree =
@@ -414,6 +416,7 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Status status_{Node::Status::Reset};
   float contraction_rate_{1.0};
   float contraction_lambda_{0.0};
+  // float contraction_alpha_{0.0};
   float d_xy_{1e10};
   float d_sigma_{1e10};
   float d_xy_mod_{1e10};
@@ -599,7 +602,7 @@ class Belief : public Node {
       } break;
       case GaussianMergeType::ContractPertSigma: {
         auto message = messages.front();
-        this->contract(message, true, false);
+        this->contract(message, true, false, params);
         result->change.push_back(message.KLDivergence(*this));
         result->status.push_back(UpdateResult::Success);
       } break;
@@ -628,11 +631,14 @@ class Belief : public Node {
 
   void contract(const Gaussian& other,
                 bool use_pert_sigma = true,
-                bool bound_sigma = false) {
+                bool bound_sigma = false,
+                UpdateParams params = {}) {
     float dxy_no_eta = this->KLDivergence(other);
     float d_yx = other.KLDivergence(*this);
     Gaussian x_diff = other - (*this);
     auto Sigma_d = x_diff.Sigma();
+    float gamma = params.gamma;
+    float d_reset = params.d_reset;
 
     float rate = dxy_no_eta / d_xy_curr_;
     this->rel_dd_xy_curr_ = (dxy_no_eta - d_xy_curr_) / d_xy_curr_;
@@ -642,7 +648,6 @@ class Belief : public Node {
       this->dd_xy_mod_ = 0;
       return;
     }
-    float gamma = 0.2;
     float alpha = 1 / (1 + gamma * rate);
     if (dxy_no_eta < 0) {
       dxy_no_eta = 0;
@@ -683,12 +688,13 @@ class Belief : public Node {
     float d_target = d_xy_ * alpha;
     float d_t_sigma = d_sigma_ * alpha;
     // reset
-    if (d_yx > 0.1 or reset) {
+    if (d_yx > d_reset or reset) {
       this->status_ = Node::Status::Reset;
       this->replace(other);
       d_xy_ = std::numeric_limits<float>::max();
       d_sigma_ = std::numeric_limits<float>::max();
       this->dd_xy_mod_ = 1e10;
+      spdlog::debug("reset dyx {}", d_yx);
       return;
     }
 
