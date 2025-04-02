@@ -18,6 +18,7 @@ add_compile_options(-Wno-sign-compare)
 find_package(Eigen3 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
+find_package(fmt REQUIRED)
 
 find_package(GSL REQUIRED)
 include(FetchContent)
@@ -36,6 +37,24 @@ if(NOT Matplot++_FOUND)
         endif()
 endif()
 
+if(GBPC_BUILD_TESTS)
+        find_package(SFML REQUIRED)
+        find_package(TGUI QUIET)
+
+        if(NOT TGUI_FOUND)
+                message(STATUS "TGUI not found, downloading via FetchContent...")
+                include(FetchContent)
+
+                FetchContent_Declare(
+                        TGUI
+                        GIT_REPOSITORY https://github.com/texus/TGUI.git
+                        GIT_TAG v1.8.0
+                )
+
+                FetchContent_MakeAvailable(TGUI)
+        endif()
+endif()
+
 set(INCLUDES
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -49,6 +68,8 @@ set(DEPENDENCIES
         gtsam
         TBB::tbb
         GSL::gsl
+        # fmt
+        fmt::fmt
 )
 
 add_library(gbpc SHARED
@@ -61,7 +82,6 @@ target_link_libraries(gbpc
 
 # build tests
 add_subdirectory(tests)
-add_subdirectory(demo)
 add_subdirectory(matlab)
 
 install(TARGETS gbpc

@@ -1,7 +1,6 @@
 #ifndef GBPC_VARIABLE_NODE_H_
 #define GBPC_VARIABLE_NODE_H_
 
-#include <Eigen/Eigen>
 #include <memory>
 #include <optional>
 

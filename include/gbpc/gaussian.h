@@ -1,6 +1,7 @@
 #ifndef GBPC_GAUSSIAN_H_
 #define GBPC_GAUSSIAN_H_
 
+#include <fmt/format.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
@@ -9,10 +10,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/slam/BetweenFactor.h>
-#include <spdlog/spdlog.h>
 
-#include <Eigen/Eigen>
-#include <concepts>
 #include <optional>
 
 namespace gtsam {
@@ -330,9 +328,10 @@ class Gaussian {
 class Node : public std::enable_shared_from_this<Node>, public Gaussian {
  public:
   using shared_ptr = std::shared_ptr<Node>;
-  Node() = default;
-  Node(const Key& key) : Gaussian(key) {}
-  Node(const Gaussian& initial) : Gaussian(initial) {}
+
+  template <typename... Args>
+  Node(Args&&... args) : Gaussian(std::forward<Args>(args)...) {}
+
   virtual ~Node() = default;
 
   void send() {
@@ -437,16 +436,11 @@ class Belief : public Node {
   using Covariance = Matrix;
   using Noise = noiseModel::Gaussian;
 
-  Belief(const Key& key) : Node(key) {}
-
-  Belief(const This& other) = default;
-  Belief(const Gaussian& other) : Node(other) {}
-
-  Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t degree)
-      : Node(Gaussian(key, mu, Sigma, degree)) {}
+  template <typename... Args>
+  Belief(Args&&... args) : Node(std::forward<Args>(args)...) {}
 
   virtual std::optional<Gaussian> potential(
-      const Node::shared_ptr& node = nullptr) override {
+      const Node::shared_ptr& = nullptr) override {
     return std::nullopt;
   }
 
@@ -657,11 +651,6 @@ class Belief : public Node {
     bool reset = false;
     if (not(alpha > -std::numeric_limits<float>::epsilon() &&
             alpha < 1 + std::numeric_limits<float>::epsilon())) {
-      spdlog::warn("alpha({}) is not between 0 and 1, {},{},{}",
-                   alpha,
-                   dxy_no_eta,
-                   d_xy_curr_,
-                   rate);
       reset = true;
       this->status_ = Node::Status::Reset;
       this->Sigma_.setIdentity();
@@ -694,7 +683,6 @@ class Belief : public Node {
       d_xy_ = std::numeric_limits<float>::max();
       d_sigma_ = std::numeric_limits<float>::max();
       this->dd_xy_mod_ = 1e10;
-      spdlog::debug("reset dyx {}", d_yx);
       return;
     }
 

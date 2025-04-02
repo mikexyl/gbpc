@@ -3,7 +3,6 @@
 
 #include <gtsam/slam/dataset.h>
 
-#include <Eigen/Eigen>
 #include <boost/concept_check.hpp>
 #include <memory>
 
@@ -44,9 +43,7 @@ class Factor : public Node {
     return keys;
   }
 
-  virtual void update(std::vector<Gaussian> messages,
-                      UpdateParams params,
-                      UpdateResult* result) {
+  virtual void update(std::vector<Gaussian>, UpdateParams, UpdateResult*) {
     throw "Factor::update not implemented";
   };
 
