@@ -126,8 +126,7 @@ class Gaussian {
   }
 
   double hellingerDistance(const This& other) const {
-    return hellingerDistance(
-        mu_, other.mu_, Sigma_ + other.Sigma(), other.Sigma_);
+    return hellingerDistance(mu_, other.mu_, Sigma_, other.Sigma_);
   }
 
   double KLDivergence(const This& other) const {
@@ -254,8 +253,9 @@ class Gaussian {
     Matrix mu1mu1t = mu1 * mu1.transpose() * 2;
     Matrix mu2mu2t = mu2 * mu2.transpose() * 2;
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
-    Matrix Sigma_mix =gauss2.Sigma();
-        // alpha * (gauss1.Sigma()) + (1 - alpha) * (gauss2.Sigma());
+    Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
+                       (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
+    // Sigma_mix *= 0.7;
 
     size_t degree1 = gauss1.degree(), degree2 = gauss2.degree();
     size_t weighted_degree =
