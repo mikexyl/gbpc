@@ -47,136 +47,165 @@ class Factor : public Node {
     throw "Factor::update not implemented";
   };
 
-  virtual gtsam::GraphAndValues gtsam() = 0;
+  auto gtsam() { return gtsam_factor_; }
 
  protected:
-  Key factor_key_;
-};
-
-template <class VALUE>
-class BetweenFactor : public Factor {
-  // Check that VALUE type is a testable Lie group
-  BOOST_CONCEPT_ASSERT((IsTestable<VALUE>));
-  BOOST_CONCEPT_ASSERT((IsLieGroup<VALUE>));
+  NonlinearFactor::shared_ptr gtsam_factor_;
 
  public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  static void updateFactorToVar(
+      Key target_key,
+      const gtsam::NonlinearFactor& factor,
+      std::unordered_map<gtsam::Key, std::shared_ptr<gbpc::Node>>* vars,
+      bool update_mu = false) {
+    // Step 1: Linearize factor and cast to JacobianFactor
+    Values values;
+    for (auto key : factor.keys()) {
+      auto it = vars->find(key);
+      if (it == vars->end()) throw std::runtime_error("Key not found in vars_");
+      (*it).second->addToValues(&values);
+    }
+    auto lin_f = factor.linearize(values);
+    auto jac = boost::dynamic_pointer_cast<JacobianFactor>(lin_f);
+    if (!jac)
+      throw std::runtime_error("Expected JacobianFactor from linearization");
 
-  using This = BetweenFactor<VALUE>;
-  using shared_ptr = std::shared_ptr<This>;
-  using AdjVar = Variable<VALUE>;
-  using BeliefT = Belief<VALUE>;
-  using Message = BeliefT;
+    // Only one variable in the factor — must be the target
+    if (jac->keys().size() == 1) {
+      if (jac->keys()[0] == target_key) {
+        // It's a unary factor on the target key → return its covariance
+        const auto& model = jac->get_model();  // Gaussian noise model
 
-  explicit BetweenFactor(const Message& measured) : Factor(measured) {}
+        if (!model)
+          throw std::runtime_error("Unary prior factor has no noise model");
 
-  Variable<VALUE>* var1() {
-    return static_cast<Variable<VALUE>*>(adj_vars()[0].get());
-  }
-
-  Variable<VALUE>* var2() {
-    return static_cast<Variable<VALUE>*>(adj_vars()[1].get());
-  }
-
-  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
-    assert(var == adj_vars()[0] || var == adj_vars()[1]);
-
-    if (var == adj_vars()[0]) {
-      Gaussian message(*this);
-      message.merge(*adj_vars()[0], false);
-      return message;
-    } else if (var == adj_vars()[1]) {
-      auto measured = traits<VALUE>::Expmap(this->mu());
-      auto inverse = traits<VALUE>::Inverse(measured);
-      auto inverse_mu = traits<VALUE>::Logmap(inverse);
-      Gaussian inverse_message(
-          this->key(), inverse_mu, this->Sigma(), this->degree());
-      inverse_message.merge(*adj_vars()[1], false);
-      return inverse_message;
+        // The information matrix is RᵀR (from QR)
+        const Matrix lambda = model->information();  // = RᵀR
+        std::cout << "Updating prior factor" << std::endl;
+        vars->at(target_key)->setLambda(lambda);  // update Lambda of target
+        if (update_mu) {
+          vars->at(target_key)->setEta(jac->getb());  // update mu of target
+        }
+        return;
+      } else {
+        throw std::runtime_error(
+            "Factor has only one variable, but it's not the target key");
+      }
     }
 
-    return std::nullopt;
-  }
+    // Step 2: Gather keys and ensure target is present
+    const auto& keys = jac->keys();
+    const size_t num_vars = keys.size();
+    auto it_target = std::find(keys.begin(), keys.end(), target_key);
+    if (it_target == keys.end())
+      throw std::runtime_error("Target key not involved in the factor");
 
-  gtsam::GraphAndValues gtsam() override {
-    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
-    auto g0 = traits<VALUE>::Expmap(this->mu());
-    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
+    const size_t target_index = std::distance(keys.begin(), it_target);
 
-    typename gtsam::BetweenFactor<VALUE>::shared_ptr factor(
-        new gtsam::BetweenFactor<VALUE>(
-            var1()->key(), var2()->key(), g0, noise));
-    graph->push_back(factor);
+    // Step 3: Build joint Jacobian matrix H and prior info matrix Lambda_prior
+    std::vector<int> dims;
+    std::vector<Matrix> blocks;
+    std::vector<Matrix> priors;
 
-    Values::shared_ptr values(new Values());
-    auto value1 = traits<VALUE>::Expmap(var1()->mu());
-    auto value2 = traits<VALUE>::Expmap(var2()->mu());
-    values->insert(var1()->key(), value1);
-    values->insert(var2()->key(), value2);
+    size_t total_dim = 0;
+    for (size_t i = 0; i < num_vars; ++i) {
+      Key k = keys[i];
+      auto node_it = vars->find(k);
+      if (node_it == vars->end())
+        throw std::runtime_error("Missing prior for key in vars_");
 
-    return {graph, values};
-  }
-};
+      Matrix Hi = jac->getA(jac->keys().begin() + i);
 
-template <class VALUE>
-class PriorFactor : public Factor {
- public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+      Matrix Lambda_i = node_it->second->Lambda();
+      if (k == target_key) {
+        Lambda_i = Matrix::Zero(Hi.cols(), Hi.cols());  // ← no prior on target
+      } else {
+        Lambda_i = node_it->second->Lambda();
+      }
 
-  using This = PriorFactor<VALUE>;
-  using shared_ptr = std::shared_ptr<This>;
+      dims.push_back(Hi.cols());
+      blocks.push_back(Hi);
+      priors.push_back(Lambda_i);
+      total_dim += Hi.cols();
+    }
 
-  using AdjVar = Variable<VALUE>;
-  using BeliefT = Belief<VALUE>;
-  using Message = BeliefT;
+    // Construct H (concatenated Jacobians) and Lambda_prior (block diagonal)
+    Matrix H(jac->rows(), total_dim);
+    Matrix Lambda_prior = Matrix::Zero(total_dim, total_dim);
 
-  explicit PriorFactor(const BeliefT& prior)
-      : Factor(static_cast<Gaussian>(prior)) {}
+    size_t col_start = 0;
+    for (size_t i = 0; i < num_vars; ++i) {
+      int dim = dims[i];
 
-  Variable<VALUE>* var() {
-    return static_cast<Variable<VALUE>*>(adj_vars()[0].get());
-  }
+      H.middleCols(col_start, dim) = blocks[i];
+      Lambda_prior.block(col_start, col_start, dim, dim) = priors[i];
 
-  BeliefT* varAsBelief() { return static_cast<BeliefT*>(adj_vars()[0].get()); }
+      col_start += dim;
+    }
 
-  std::optional<Gaussian> potential(const Node::shared_ptr& var) override {
-    throw "should never be called";
-  }
+    // Step 4: Compute total information matrix
+    Matrix Lambda_total = Lambda_prior + H.transpose() * H;
 
-  Gaussian prior() const override { return static_cast<Gaussian>(*this); }
+    // Step 5: Partition into (target, rest)
+    // Reorder so that target block is last
+    std::vector<int> ordering;  // new column/row ordering
+    int target_dim = dims[target_index];
+    int rest_dim = total_dim - target_dim;
 
-  UpdateResult update(const Gaussian& message, UpdateParams update_params) {
-    std::stringstream ss;
-    ss << "Factor::update: \n"
-       << var()->mu().transpose() << " : "
-       << var()->Sigma().diagonal().transpose() << " + " << std::endl
-       << "  " << message.mu().transpose() << " : "
-       << message.Sigma().diagonal().transpose() << " = ";
+    // map: original_index → reordered_index
+    std::vector<std::pair<int, int>> reorder_pairs;
+    col_start = 0;
+    for (size_t i = 0; i < num_vars; ++i) {
+      int dim = dims[i];
+      if (i != target_index) {
+        reorder_pairs.emplace_back(col_start, dim);
+      }
+      col_start += dim;
+    }
+    int target_offset = 0;
+    for (size_t i = 0; i < reorder_pairs.size(); ++i)
+      target_offset += reorder_pairs[i].second;
 
-    UpdateResult results;
-    varAsBelief()->update({message}, update_params, &results);
+    // Build permutation matrix
+    Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic> P(total_dim);
+    std::vector<int> perm_indices;
 
-    ss << var()->mu().transpose() << " : "
-       << var()->Sigma().diagonal().transpose();
+    for (const auto& [offset, dim] : reorder_pairs)
+      for (int i = 0; i < dim; ++i) perm_indices.push_back(offset + i);
 
-    results.message = ss.str();
-    return results;
-  }
+    for (int i = 0; i < target_dim; ++i)
+      perm_indices.push_back(col_start - target_dim +
+                             i);  // target block at end
 
-  gtsam::GraphAndValues gtsam() override {
-    NonlinearFactorGraph::shared_ptr graph(new NonlinearFactorGraph());
+    P.indices() =
+        Eigen::VectorXi::Map(perm_indices.data(), perm_indices.size());
 
-    auto g0 = traits<VALUE>::Expmap(this->mu());
-    auto noise = gtsam::noiseModel::Gaussian::Covariance(this->Sigma());
-    typename gtsam::PriorFactor<VALUE>::shared_ptr prior(
-        new gtsam::PriorFactor<VALUE>(var()->key(), g0, noise));
-    graph->push_back(prior);
+    Matrix Lambda_reordered = P.transpose() * Lambda_total * P;
 
-    Values::shared_ptr values(new Values());
-    auto value = traits<VALUE>::Expmap(this->mu());
-    values->insert(var()->key(), value);
+    // Partition into blocks
+    Matrix Lambda_rr = Lambda_reordered.topLeftCorner(rest_dim, rest_dim);
+    Matrix Lambda_rt = Lambda_reordered.topRightCorner(rest_dim, target_dim);
+    Matrix Lambda_tr = Lambda_reordered.bottomLeftCorner(target_dim, rest_dim);
+    Matrix Lambda_tt =
+        Lambda_reordered.bottomRightCorner(target_dim, target_dim);
 
-    return {graph, values};
+    // Step 6: Schur complement
+    Matrix Lambda_tt_marginal =
+        Lambda_tt - Lambda_tr * Lambda_rr.inverse() * Lambda_rt;
+
+    // Step 7: Update mu if needed
+    if (update_mu) {
+      Vector b = jac->getb();
+      Vector eta = H.transpose() * b;
+      Vector eta_reordered = P.transpose() * eta;
+      Vector eta_r = eta_reordered.head(rest_dim);    // natural vec for rest
+      Vector eta_t = eta_reordered.tail(target_dim);  // natural vec for target
+      Vector eta_t_marginal = eta_t - Lambda_tr * Lambda_rr.inverse() * eta_r;
+      vars->at(target_key)->setEta(eta_t_marginal);
+    }
+
+    // Step 7: Update Lambda
+    vars->at(target_key)->setLambda(Lambda_tt_marginal);
   }
 };
 

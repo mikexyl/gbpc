@@ -67,7 +67,7 @@ class Gaussian {
            const Vector& eta,
            const Eigen::MatrixXd& Sigma,  // covariance
            const Eigen::MatrixXd& lambda,
-           size_t degree)
+           size_t degree = 1)
       : mu_(mu),
         eta_(eta),
         Sigma_(Sigma),
@@ -97,8 +97,8 @@ class Gaussian {
   size_t degree() const { return degree_; }
   const Vector& mu() const { return mu_; }
   const Vector& eta() const { return eta_; }
-  Matrix Sigma() const { return Sigma_; }
-  Matrix Lambda() const { return lambda_; }
+  const Matrix& Sigma() const { return Sigma_; }
+  const Matrix& Lambda() const { return lambda_; }
   Key key() const { return key_; }
   Key& key() { return key_; }
 
@@ -121,6 +121,18 @@ class Gaussian {
                     mu() - other.mu(),
                     Sigma() - other.Sigma() + epsilon_sigma,
                     degree());
+  }
+
+  std::string print() const {
+    std::stringstream str;
+    str << fmt::format("Gaussian: key = {}, degree = {}\n",
+                       DefaultKeyFormatter(key_),
+                       degree_);
+    str << "eta: " << eta_.transpose() << "\n";
+    str << "lambda: \n" << lambda_ << "\n";
+    str << "mu: " << mu().transpose() << "\n";
+    str << "Sigma: \n" << Sigma() << "\n";
+    return str.str();
   }
 
   double hellingerDistance(const This& other) const {
@@ -297,15 +309,6 @@ class Gaussian {
 
   void replace(const Gaussian& other) { *this = other; }
 
-  std::string print() const {
-    std::stringstream ss;
-    ss << "key: " << key_ << std::endl;
-    ss << "mu: " << mu_.transpose() << std::endl;
-    ss << "Sigma: " << Sigma_ << std::endl;
-    ss << "N: " << degree_ << std::endl;
-    return ss.str();
-  }
-
   friend std::ostream& operator<<(std::ostream& os, const This& obj) {
     os << obj.print();
     return os;
@@ -313,9 +316,14 @@ class Gaussian {
 
   bool empty() const { return mu_.size() == 0; }
 
-  void updateMu(const Vector& mu) {
-    mu_ = mu;
-    updateCanonical();
+  void setEta(const Vector& eta) { eta_ = eta; }
+
+  void setLambda(const Matrix& lambda) { lambda_ = lambda; }
+
+  std::pair<Vector, Matrix> toMoments() {
+    // Convert eta and lambda to mu and Sigma
+    updateMoments();
+    return std::make_pair(mu_, Sigma_);
   }
 
  protected:
@@ -333,6 +341,8 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   Node(Args&&... args) : Gaussian(std::forward<Args>(args)...) {}
 
   virtual ~Node() = default;
+
+  virtual void addToValues(gtsam::Values* values) const = 0;
 
   void send() {
     for (auto neighbor : neighbors_) {
@@ -445,6 +455,10 @@ class Belief : public Node {
   }
 
   VALUE value() const { return traits<VALUE>::Expmap(mu_); }
+
+  virtual void addToValues(gtsam::Values* values) const override {
+    values->insert(key(), value());
+  }
 
   static Gaussian optimizeWithGtsam(const std::vector<This>& beliefs) {
     NonlinearFactorGraph graph;

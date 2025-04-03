@@ -17,6 +17,24 @@ struct GaussianKeyCompare {
   }
 };
 
+class Nodes : public std::unordered_map<Key, gbpc::Node::shared_ptr> {
+ public:
+  using shared_ptr = std::shared_ptr<Nodes>;
+  using const_iterator =
+      std::unordered_map<Key, gbpc::Node::shared_ptr>::const_iterator;
+
+  Nodes() = default;
+
+  std::string print() const {
+    std::stringstream ss;
+    for (auto const& [key, node] : *this) {
+      node->updateMoments();
+      ss << fmt::format("Key: {}, Node: {}\n", key, node->print());
+    }
+    return ss.str();
+  }
+};
+
 class Graph {
  public:
   Graph() = default;
@@ -127,27 +145,7 @@ class Graph {
 
   auto const& factors() const { return factors_; }
   std::vector<Gaussian> solveByGtsam() {
-    NonlinearFactorGraph graph;
-    Values values;
-
-    for (auto const& factor : factors_) {
-      auto gtsam = factor->gtsam();
-      graph.add(*gtsam.first);
-      values.insert_or_assign(*gtsam.second);
-    }
-
-    LevenbergMarquardtOptimizer optimizer(graph, values);
-    auto result = optimizer.optimize();
-    Marginals marginals(graph, result);
-
-    std::vector<Gaussian> gaussians;
-    for (auto const& [key, value] : result) {
-      auto mu = traits<Point2>::Logmap(value.cast<Point2>());
-      auto sigma = marginals.marginalCovariance(key);
-      gaussians.emplace_back(key, mu, sigma, 1);
-    }
-
-    return gaussians;
+    throw std::runtime_error("Not implemented");
   }
 
  protected:
