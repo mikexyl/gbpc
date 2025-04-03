@@ -82,6 +82,15 @@ class Gaussian {
     updateCanonical();
   }
 
+  static Gaussian FromCanonical(Key key,
+                                const Vector& eta,
+                                const Eigen::MatrixXd& Lambda,
+                                size_t degree = 1) {
+    auto Sigma = Lambda.inverse();
+    auto mu = Sigma * eta;
+    return Gaussian(key, mu, eta, Sigma, Lambda, degree);
+  }
+
   static Gaussian Random(Key key, size_t dim, size_t degree = 1) {
     Vector mu = Vector::Random(dim);
     Matrix Sigma = Matrix::Random(dim, dim) * 100;
@@ -265,7 +274,6 @@ class Gaussian {
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
     Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
                        (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
-    // Sigma_mix *= 0.7;
 
     size_t degree1 = gauss1.degree(), degree2 = gauss2.degree();
     size_t weighted_degree =
@@ -410,6 +418,14 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
                       UpdateParams params,
                       UpdateResult* result) = 0;
 
+  virtual void updateFromCanonical(const Vector& eta,
+                                   const Matrix& lambda,
+                                   UpdateParams params,
+                                   UpdateResult* result) {
+    Gaussian message = Gaussian::FromCanonical(this->key(), eta, lambda);
+    this->update({message}, params, result);
+  }
+
   enum class Status { Converging, Reset, Converged };
   Status status() const { return status_; }
   float contractionRate() const { return contraction_rate_; }
@@ -547,10 +563,10 @@ class Belief : public Node {
         for (auto message : messages) {
           float distance = this->hellingerDistance(message);
           if (distance < params.belief_change_threshold) {
-            result->status.push_back(UpdateResult::Failed);
+            if (result) result->status.push_back(UpdateResult::Failed);
             continue;
           } else {
-            result->status.push_back(UpdateResult::Success);
+            if (result) result->status.push_back(UpdateResult::Success);
           }
 
           if (params.type == GaussianMergeType::MergeRobust) {
@@ -568,12 +584,12 @@ class Belief : public Node {
           message_copy.relax(params.relax);
 
           float diff = message.KLDivergence(*this);
-          result->change.push_back(diff);
+          if (result) result->change.push_back(diff);
           if (diff < params.belief_change_threshold) {
-            result->status.push_back(UpdateResult::Failed);
+            if (result) result->status.push_back(UpdateResult::Failed);
             continue;
           } else {
-            result->status.push_back(UpdateResult::Success);
+            if (result) result->status.push_back(UpdateResult::Success);
           }
 
           this->replace(Damp(*this,
@@ -586,39 +602,51 @@ class Belief : public Node {
       case GaussianMergeType::Replace: {
         auto message = messages.front();
         this->replace(message);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       case GaussianMergeType::Step: {
         auto message = messages.front();
         this->step(message, params.step_size);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       case gbpc::GaussianMergeType::DampContract: {
         auto message = messages.front();
         auto damped_message = Gaussian::Damp(*this, message, 0.5);
         this->contract(damped_message, true, false);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       case GaussianMergeType::Contract: {
         auto message = messages.front();
         this->contract(message, false, false);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       case GaussianMergeType::ContractPertSigma: {
         auto message = messages.front();
         this->contract(message, true, false, params);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       case GaussianMergeType::ContractBoundedSigma: {
         auto message = messages.front();
         this->contract(message, true, true);
-        result->change.push_back(message.KLDivergence(*this));
-        result->status.push_back(UpdateResult::Success);
+        if (result) {
+          result->change.push_back(message.KLDivergence(*this));
+          result->status.push_back(UpdateResult::Success);
+        }
       } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");

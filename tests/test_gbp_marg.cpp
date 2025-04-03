@@ -19,7 +19,6 @@ int main() {
   Pose3 x_lin = Pose3(Rot3::Identity(), Point3(0, 0, 0));
   Pose3 y_lin = Pose3(Rot3::Identity(), Point3(1, 0, 0));  // y is 1m ahead of x
 
-  // PERTURB x slightly: 5 cm in x, 2 cm in y, 1 deg yaw
   Vector6 dx;
   dx << 0.1, 0.1, 0.1, 0.5, 0.2, 0.0;  // [roll pitch yaw x y z]
   Pose3 x_perturbed = x_lin.retract(dx);
@@ -50,7 +49,13 @@ int main() {
       y_key, Pose3::Logmap(y_lin), Matrix::Identity(6, 6), 1);
 
   // Compute marginal covariance of y via explicit Schur complement
-  gbpc::Factor::updateFactorToVar(y_key, factor, &vars, true);
+  UpdateParams params;
+  params.type = gbpc::GaussianMergeType::Contract;
+  params.d_reset = 0.1;
+  params.gamma = 0.1;
+  for (size_t i = 0; i < 100; i++) {
+    gbpc::Factor::updateFactorToVar(y_key, factor, &vars, true, params);
+  }
 
   std::cout << vars.print() << std::endl;
 

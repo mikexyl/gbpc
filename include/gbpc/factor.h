@@ -55,15 +55,19 @@ class Factor : public Node {
  public:
   static void updateFactorToVar(
       Key target_key,
-      const gtsam::NonlinearFactor& factor,
+      const gtsam::NoiseModelFactor& factor,
       std::unordered_map<gtsam::Key, std::shared_ptr<gbpc::Node>>* vars,
-      bool update_mu = false) {
+      bool update_mu = false,
+      const UpdateParams& params = UpdateParams(),
+      UpdateResult* result = nullptr) {
     // Step 1: Linearize factor and cast to JacobianFactor
     Values values;
+    VectorValues vec_values;
     for (auto key : factor.keys()) {
       auto it = vars->find(key);
       if (it == vars->end()) throw std::runtime_error("Key not found in vars_");
       (*it).second->addToValues(&values);
+      vec_values.insert(key, (*it).second->mu());
     }
     auto lin_f = factor.linearize(values);
     auto jac = boost::dynamic_pointer_cast<JacobianFactor>(lin_f);
@@ -82,10 +86,16 @@ class Factor : public Node {
         // The information matrix is RᵀR (from QR)
         const Matrix lambda = model->information();  // = RᵀR
         std::cout << "Updating prior factor" << std::endl;
-        vars->at(target_key)->setLambda(lambda);  // update Lambda of target
+        Vector new_eta = vars->at(target_key)->eta();
         if (update_mu) {
-          vars->at(target_key)->setEta(jac->getb());  // update mu of target
+          new_eta = jac->getb();  // natural vector for target
         }
+        vars->at(target_key)
+            ->updateFromCanonical(
+                new_eta,
+                lambda,
+                params,
+                result);  // update target with new mu and lambda
         return;
       } else {
         throw std::runtime_error(
@@ -192,20 +202,34 @@ class Factor : public Node {
     // Step 6: Schur complement
     Matrix Lambda_tt_marginal =
         Lambda_tt - Lambda_tr * Lambda_rr.inverse() * Lambda_rt;
+    Vector new_eta = vars->at(target_key)->eta();
 
     // Step 7: Update mu if needed
     if (update_mu) {
       Vector b = jac->getb();
-      Vector eta = H.transpose() * b;
+      Vector r = factor.whitenedError(values);
+      std::cout << "r: " << r.transpose() << std::endl;
+      Vector eta = -H.transpose() * r;
       Vector eta_reordered = P.transpose() * eta;
       Vector eta_r = eta_reordered.head(rest_dim);    // natural vec for rest
       Vector eta_t = eta_reordered.tail(target_dim);  // natural vec for target
-      Vector eta_t_marginal = eta_t - Lambda_tr * Lambda_rr.inverse() * eta_r;
-      vars->at(target_key)->setEta(eta_t_marginal);
+      Vector delta_eta = eta_t - Lambda_tr * Lambda_rr.inverse() * eta_r;
+      new_eta = 0.1 * delta_eta + vars->at(target_key)->eta();
+      std::cout << "delta eta: " << delta_eta.transpose() << std::endl;
+      std::cout << "new eta: " << new_eta.transpose() << std::endl;
     }
 
+    std::cout << "new sigma: " << Lambda_tt_marginal.inverse() << std::endl;
+    std::cout << "new mu"
+              << (Lambda_tt_marginal.inverse() * new_eta).transpose()
+              << std::endl;
+
     // Step 7: Update Lambda
-    vars->at(target_key)->setLambda(Lambda_tt_marginal);
+    vars->at(target_key)
+        ->updateFromCanonical(new_eta,
+                              Lambda_tt_marginal,
+                              params,
+                              result);  // update target with new mu and lambda
   }
 };
 

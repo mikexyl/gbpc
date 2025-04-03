@@ -33,6 +33,12 @@ class Nodes : public std::unordered_map<Key, gbpc::Node::shared_ptr> {
     }
     return ss.str();
   }
+
+  void updateMoments() {
+    for (auto const& [key, node] : *this) {
+      node->updateMoments();
+    }
+  }
 };
 
 class Graph {
