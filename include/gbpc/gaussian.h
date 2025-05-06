@@ -132,6 +132,17 @@ class Gaussian {
     return KLDivergence(mu_, other.mu_, Sigma_, other.Sigma_);
   }
 
+  static double Chi2(const Vector& mu, const Matrix& cov, const Vector& x) {
+    // Compute the residual
+    Vector diff = x - mu;
+
+    // Solve Σ·y = diff  (more stable/efficient than cov.inverse()*diff)
+    Vector y = cov.ldlt().solve(diff);
+
+    // χ² = diffᵀ · y
+    return diff.dot(y);
+  }
+
   static double KLDivergence(const Eigen::VectorXd& mu1,
                              const Eigen::VectorXd& mu2,
                              const Eigen::MatrixXd& cov1,
@@ -319,7 +330,16 @@ class Gaussian {
 
   bool empty() const { return mu_.size() == 0; }
 
-  void updateMu(const Vector& mu) {
+  /**
+   * @brief update mu, return chi2 if provided
+   *
+   * @param mu
+   * @param chi2
+   */
+  void updateMu(const Vector& mu, double* chi2 = nullptr) {
+    if (chi2) {
+      *chi2 = Chi2(mu_, Sigma_, mu);
+    }
     mu_ = mu;
     updateCanonical();
   }
