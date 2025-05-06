@@ -146,7 +146,7 @@ class PriorFactor : public Factor {
     throw "should never be called";
   }
 
-  Gaussian prior() const override { return static_cast<Gaussian>(*this); }
+  std::optional<Gaussian> prior() const override { return static_cast<Gaussian>(*this); }
 
   UpdateResult update(const Gaussian& message, UpdateParams update_params) {
     std::stringstream ss;

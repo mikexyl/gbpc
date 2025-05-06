@@ -61,7 +61,7 @@ target_link_libraries(gbpc
 
 # build tests
 add_subdirectory(tests)
-add_subdirectory(demo)
+# add_subdirectory(demo)
 add_subdirectory(matlab)
 
 install(TARGETS gbpc

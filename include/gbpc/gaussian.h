@@ -60,8 +60,7 @@ class Gaussian {
   using Matrix = Eigen::MatrixXd;
   using This = Gaussian;
 
-  Gaussian() : degree_(0) {}
-  explicit Gaussian(Key key) : key_(key) {}
+  Gaussian() = delete;
   Gaussian(const Gaussian& other) = default;
   Gaussian(Gaussian&& other) = default;
   Gaussian(Key key,
@@ -138,7 +137,12 @@ class Gaussian {
                              const Eigen::MatrixXd& cov1,
                              const Eigen::MatrixXd& cov2) {
     // Check that dimensions match
-    assert(mu1.size() == mu2.size() && "Means must be of the same dimension");
+    if (mu1.size() != mu2.size()) {
+      throw std::invalid_argument(
+          fmt::format("Means must be of the same dimension, but got {} and {}",
+                      mu1.size(),
+                      mu2.size()));
+    }
     assert(cov1.rows() == cov1.cols() && cov2.rows() == cov2.cols() &&
            cov1.rows() == mu1.size() &&
            "Covariances must be square and match mean dimensions");
@@ -330,9 +334,10 @@ class Gaussian {
 class Node : public std::enable_shared_from_this<Node>, public Gaussian {
  public:
   using shared_ptr = std::shared_ptr<Node>;
-  Node() = default;
-  Node(const Key& key) : Gaussian(key) {}
-  Node(const Gaussian& initial) : Gaussian(initial) {}
+
+  template <typename... Args>
+  Node(Args&&... args) : Gaussian(std::forward<Args>(args)...) {}
+
   virtual ~Node() = default;
 
   void send() {
@@ -342,7 +347,7 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
   }
 
   void send(const shared_ptr& receiver) {
-    Gaussian message(this->prior());
+    Gaussian message(*this->prior());
 
     for (auto it = neighbors_.begin(); it != neighbors_.end(); it++) {
       if (*it != receiver) {
@@ -350,7 +355,7 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
           message.merge(*potential);
         }
         if (messages_.find(*it) != messages_.end()) {
-          message.merge(messages_[*it]);
+          message.merge(messages_.at(*it));
         }
       }
     }
@@ -365,13 +370,13 @@ class Node : public std::enable_shared_from_this<Node>, public Gaussian {
 
   void receive(const shared_ptr& sender, const Gaussian& message) {
     assert(message.key() == this->key_);
-    messages_[sender] = message;
-    assert(messages_[sender].key() == this->key_);
+    messages_.at(sender) = message;
+    assert(messages_.at(sender).key() == this->key_);
   }
 
   auto const& messages() const { return messages_; }
 
-  virtual Gaussian prior() const { return Gaussian(); }
+  virtual std::optional<Gaussian> prior() const { return std::nullopt; }
 
   virtual std::optional<Gaussian> potential(
       const shared_ptr& node = nullptr) = 0;
@@ -437,13 +442,8 @@ class Belief : public Node {
   using Covariance = Matrix;
   using Noise = noiseModel::Gaussian;
 
-  Belief(const Key& key) : Node(key) {}
-
-  Belief(const This& other) = default;
-  Belief(const Gaussian& other) : Node(other) {}
-
-  Belief(Key key, const Vector& mu, const Covariance& Sigma, size_t degree)
-      : Node(Gaussian(key, mu, Sigma, degree)) {}
+  template <typename... Args>
+  Belief(Args&&... args) : Node(std::forward<Args>(args)...) {}
 
   virtual std::optional<Gaussian> potential(
       const Node::shared_ptr& node = nullptr) override {

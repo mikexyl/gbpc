@@ -18,7 +18,8 @@ class Variable : public Belief<VALUE> {
   using This = Variable<VALUE>;
   using shared_ptr = std::shared_ptr<This>;
 
-  Variable(const Base& initial) : Base(initial) {}
+  template <typename... Args>
+  Variable(Args&&... args) : Base(std::forward<Args>(args)...) {}
 
   void setBelief(const Base& belief) { Base::replace(belief); }
 };
