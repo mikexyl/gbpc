@@ -16,6 +16,9 @@ if(GBPC_BUILD_TESTS)
     FetchContent_MakeAvailable(tgui)
   endif()
 
+  # set TGUI backend
+  set(TGUI_BACKEND "SFML_GRAPHICS")
+
   # add_executable(test_gtsam
   #   test_gtsam.cpp)
   # target_include_directories(test_gtsam PRIVATE ${INCLUDES} ${GTSAM_INCLUDE_DIRS})

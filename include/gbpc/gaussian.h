@@ -44,6 +44,7 @@ struct UpdateParams {
   double step_size = 0.001;
   float gamma = 0.1;
   float d_reset = 0.1;
+  float contract_alpha = 0.9;
 };
 
 struct UpdateResult {
@@ -241,10 +242,11 @@ class Gaussian {
                        const Gaussian& gauss2,
                        std::optional<double> force_alpha = 0.5,
                        bool expect_same_key = true) {
-    if (expect_same_key) {
-      assert(gauss1.key() == gauss2.key());
-    } else {
-      assert(gauss1.key() != gauss2.key());
+    if (expect_same_key and gauss1.key() != gauss2.key()) {
+      throw std::invalid_argument(
+          fmt::format("Keys do not match: {} vs {}",
+                      DefaultKeyFormatter(gauss1.key()),
+                      DefaultKeyFormatter(gauss2.key())));
     }
     uint64_t key = gauss1.key();
 
@@ -268,8 +270,8 @@ class Gaussian {
     Matrix mu1mu1t = mu1 * mu1.transpose() * 2;
     Matrix mu2mu2t = mu2 * mu2.transpose() * 2;
     Matrix mu_mixmu_mixt = mu_mix * mu_mix.transpose();
-    Matrix Sigma_mix = alpha * (gauss1.Sigma() + mu1mu1t) +
-                       (1 - alpha) * (gauss2.Sigma() + mu2mu2t) - mu_mixmu_mixt;
+    Matrix Sigma_mix =
+        alpha * (gauss1.Sigma()) + (1 - alpha) * (gauss2.Sigma());
     // Sigma_mix *= 0.7;
 
     size_t degree1 = gauss1.degree(), degree2 = gauss2.degree();
@@ -278,6 +280,16 @@ class Gaussian {
         (degree1 + degree2 + 1);  // + 1 to avoid division by zero
 
     return Gaussian(key, mu_mix, Sigma_mix, weighted_degree);
+  }
+
+  void damp(const Gaussian& other, double alpha = 0.5) {
+    // check size of the matrices
+    assert(mu_.size() == other.mu_.size());
+    assert(Sigma_.size() == other.Sigma_.size());
+    assert(lambda_.size() == other.lambda_.size());
+    assert(eta_.size() == other.eta_.size());
+
+    this->replace(Gaussian::Damp(*this, other, alpha, false));
   }
 
   void merge(const Gaussian& other, bool expect_same_key = true) {
@@ -668,7 +680,12 @@ class Belief : public Node {
       this->dd_xy_mod_ = 0;
       return;
     }
-    float alpha = 1 / (1 + gamma * rate);
+    float alpha = 0;
+    if (gamma < 0) {
+      alpha = params.contract_alpha;
+    } else {
+      alpha = 1 / (1 + gamma * rate);
+    }
     if (dxy_no_eta < 0) {
       dxy_no_eta = 0;
       std::cerr << fmt::format(

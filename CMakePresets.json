@@ -2,7 +2,7 @@
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 23,
+    "minor": 20,
     "patch": 0
   },
   "configurePresets": [
@@ -13,7 +13,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
-        "GBPC_BUILD_TESTS": "ON",
+        "GBPC_BUILD_TESTS": "OFF",
         "GBPC_BUILD_MATLAB": "OFF",
         "GTSAM_DIR": "${sourceDir}/../gtsam/build/original"
       }
