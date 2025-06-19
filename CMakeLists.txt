@@ -19,7 +19,6 @@ find_package(Eigen3 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
 
-find_package(GSL REQUIRED)
 include(FetchContent)
 
 find_package(Matplot++ QUIET)
@@ -48,7 +47,6 @@ set(DEPENDENCIES
         Eigen3::Eigen
         gtsam
         TBB::tbb
-        GSL::gsl
 )
 
 add_library(gbpc SHARED
@@ -85,7 +83,7 @@ export(TARGETS gbpc
         NAMESPACE gbpc::
         FILE "${CMAKE_CURRENT_BINARY_DIR}/gbpcTargets.cmake")
 
-set(ConfigPackageLocation lib/cmake/gbpc_net)
+set(ConfigPackageLocation lib/cmake/gbpc)
 install(EXPORT gbpcTargets
         FILE gbpcTargets.cmake
         NAMESPACE gbpc::

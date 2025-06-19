@@ -36,3 +36,6 @@ compile_commands.json
 build
 .idea
 cmake-build-debug
+# pixi environments
+.pixi
+*.egg-info
