@@ -1,4 +1,4 @@
-#include "gbpc/gaussian.h"
+#include "gbpc/belief.h"
 
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/geometry/Pose3.h>

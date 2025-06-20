@@ -5,7 +5,7 @@
 #include <memory>
 #include <optional>
 
-#include "gaussian.h"
+#include "gbpc/belief.h"
 
 namespace gbpc {
 

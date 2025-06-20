@@ -13,7 +13,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
-        "GBPC_BUILD_TESTS": "OFF",
+        "GBPC_BUILD_TESTS": "ON",
         "GBPC_BUILD_MATLAB": "OFF"
       }
     },
