@@ -11,6 +11,8 @@
 using namespace std;
 using namespace gtsam;
 
+static constexpr double kHellingerEpsilon = 1e-12;
+
 namespace gbpc {
 
 struct Hellinger : Contraction {
@@ -19,9 +21,6 @@ struct Hellinger : Contraction {
 
   Gaussian operator()(const Gaussian& curr, const Gaussian& next) override {
     Gaussian result(curr);
-
-    std::cout << "curr sigma: \n" << curr.Sigma() << std::endl;
-    std::cout << "next sigma: \n" << next.Sigma() << std::endl;
 
     std::vector<double> hell, alpha, beta;
     std::vector<Pose3> means{Pose3::Expmap(curr.mu()),
@@ -69,7 +68,6 @@ struct Hellinger : Contraction {
       result = next;
       result.dxy() = hell.at(0);
       result.dxycurr() = hell.at(0);
-      std::cout << "epsilon 1" << std::endl;
       return result;
     }
 
@@ -81,12 +79,12 @@ struct Hellinger : Contraction {
           "Alpha metric is positive, which is unexpected: " +
           std::to_string(alpha.at(0)));
     }
-    // check beta < 0
-    if (beta.at(0) > 0) {
-      throw std::runtime_error(
-          "Beta metric is positive, which is unexpected: " +
-          std::to_string(beta.at(0)));
-    }
+    // // check beta < 0
+    // if (beta.at(0) > kHellingerEpsilon) {
+    //   throw std::runtime_error(
+    //       "Beta metric is positive, which is unexpected: " +
+    //       std::to_string(beta.at(0)));
+    // }
     // check D_star < 0
     if (D_star > 0) {
       throw std::runtime_error(
@@ -118,11 +116,6 @@ struct Hellinger : Contraction {
     auto mu_d = Pose3::Logmap(pose_curr.inverse() * pose_next);
     // TODO(mikexyl): should transform Sigma first
     Matrix6 Delta_Sigma = next.Sigma() - curr.Sigma();
-
-    std::cout << "Delta_Sigma: \n" << Delta_Sigma << std::endl;
-    std::cout << mu_d.transpose() << std::endl;
-    std::cout << epsilon << std::endl;
-    // std::cout << result.Sigma() << std::endl;
 
     result.mu() = traits<VALUE>::Logmap(traits<VALUE>::Retract(
         traits<VALUE>::Expmap(curr.mu()), mu_d * epsilon));
@@ -172,9 +165,8 @@ struct Hellinger : Contraction {
     Eigen::Matrix<double, 6, 6> M = C_inv * delta_C;
 
     double trace_term = (M * M).trace();
-    // double quadratic_term = delta.transpose() * C_inv * delta_C * C_inv *
-    // delta;
-    double quadratic_term = 0;
+    double quadratic_term = delta.transpose() * C_inv * delta_C * C_inv * delta;
+    // double quadratic_term = 0;
 
     beta = -(1. / 16.) * (trace_term - quadratic_term);  // -1/16 = -0.0625
   }
@@ -206,7 +198,9 @@ struct Hellinger : Contraction {
 
   static double computeStepSize(double alpha, double beta, double D_star) {
     // Threshold for considering beta zero (to avoid numerical issues)
-    const double tol = 1e-12;
+    const double tol = kHellingerEpsilon;
+
+    int beta_sign = (beta > 0) - (beta < 0);  // -1 if beta < 0, 1 if beta > 0
 
     // Handle beta != 0 case
     if (std::abs(beta) > tol) {
@@ -216,7 +210,7 @@ struct Hellinger : Contraction {
                   << std::endl;
         return std::numeric_limits<double>::quiet_NaN();
       }
-      double numerator = -alpha - std::sqrt(discriminant);
+      double numerator = -alpha + beta_sign * std::sqrt(discriminant);
       double denominator = 2.0 * beta;
 
       // Check for division by zero or negative inside sqrt

@@ -7,36 +7,14 @@
   },
   "configurePresets": [
     {
-      "name": "config-Release",
-      "generator": "Ninja",
+      "name": "config",
+      "generator": "Ninja Multi-Config",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
         "GBPC_BUILD_TESTS": "ON",
         "GBPC_BUILD_MATLAB": "OFF"
       }
-    },
-    {
-      "name": "config-Debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
-      "inherits": "config-Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "build-Release",
-      "configurePreset": "config-Release",
-      "jobs": 12
-    },
-    {
-      "name": "build-Debug",
-      "configurePreset": "config-Debug",
-      "jobs": 12
     }
   ]
 }
