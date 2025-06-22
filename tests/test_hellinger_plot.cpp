@@ -126,8 +126,9 @@ int main() {
   std::vector<Eigen::Matrix<double, 6, 6>> contracted_covs;
   gbpc::Variable<Pose3> var(0, Pose3::Logmap(mu0), cov0, 1);
   gbpc::UpdateParams params{.type = gbpc::GaussianMergeType::Contract,
+                            .gamma = 0.1,
                             .d_reset = 0.9,
-                            .contract_alpha = 0.9,
+                            .contract_alpha = -0.9,
                             .metric_type = gbpc::MetricType::Hellinger};
   contracted_means.push_back(Pose3::Expmap(var.mu()));
   contracted_covs.push_back(var.Sigma());

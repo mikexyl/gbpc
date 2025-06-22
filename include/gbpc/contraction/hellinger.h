@@ -22,11 +22,40 @@ struct Hellinger : Contraction {
   Gaussian operator()(const Gaussian& curr, const Gaussian& next) override {
     Gaussian result(curr);
 
+    double contraction_alpha = params_.contract_alpha;
+
     std::vector<double> hell, alpha, beta;
     std::vector<Pose3> means{Pose3::Expmap(curr.mu()),
                              Pose3::Expmap(next.mu())};
     std::vector<Eigen::Matrix<double, 6, 6>> covs{curr.Sigma(), next.Sigma()};
     computeMetrics(means, covs, hell, alpha, beta);
+
+    // check if hell.(0) is NaN or Inf
+    if (std::isnan(hell.at(0)) ||
+        std::isinf(hell.at(0))) {  // hellinger distance is NaN or Inf
+      throw std::runtime_error("Hellinger distance is NaN or Inf: " +
+                               std::to_string(hell.at(0)));
+    }
+    // check if result.dxycurr() is NaN or Inf
+    if (std::isnan(curr.dxycurr()) || std::isinf(curr.dxycurr())) {
+      throw std::runtime_error("Current dxycurr is NaN or Inf: " +
+                               std::to_string(curr.dxycurr()));
+    }
+
+    // if contraction_alpha is negative, we compute it based on the convergence
+    // rate
+    result.dxycurr() = std::fmin(1.0, curr.dxycurr());
+    result.dxycurr() = std::fmax(kHellingerEpsilon, result.dxycurr());
+    double rate = 0;
+    if (contraction_alpha < 0) {
+      rate = hell.at(0) / result.dxycurr();
+      contraction_alpha = 1 / (1 + params_.gamma * rate);
+      // check if rate is NaN or Inf
+      if (std::isnan(rate) || std::isinf(rate)) {
+        throw std::runtime_error("Convergence rate is NaN or Inf: " +
+                                 std::to_string(rate));
+      }
+    }
 
     result.dxycurr() = hell.at(0);
 
@@ -48,19 +77,19 @@ struct Hellinger : Contraction {
     }
 
     // check contract alpha in [0, 1]
-    if (params_.contract_alpha < 0 || params_.contract_alpha > 1) {
+    if (contraction_alpha < 0 || contraction_alpha > 1) {
       throw std::runtime_error("Contract alpha out of bounds [0, 1]: " +
-                               std::to_string(params_.contract_alpha));
+                               std::to_string(contraction_alpha));
     }
 
-    double target_hellinger = result.dxy() * params_.contract_alpha;
+    double target_hellinger = result.dxy() * contraction_alpha;
     if (target_hellinger < 0 || target_hellinger > 1) {
       throw std::runtime_error(
           fmt::format("Target Hellinger distance out of bounds [0, 1]: {}, "
                       "dxy: {}, contract alpha: {}",
                       target_hellinger,
                       result.dxy(),
-                      params_.contract_alpha));
+                      contraction_alpha));
     }
 
     if (result.dxycurr() < target_hellinger) {
@@ -79,19 +108,15 @@ struct Hellinger : Contraction {
           "Alpha metric is positive, which is unexpected: " +
           std::to_string(alpha.at(0)));
     }
-    // // check beta < 0
-    // if (beta.at(0) > kHellingerEpsilon) {
-    //   throw std::runtime_error(
-    //       "Beta metric is positive, which is unexpected: " +
-    //       std::to_string(beta.at(0)));
-    // }
-    // check D_star < 0
-    if (D_star > 0) {
+
+    if (D_star > 0 or std::isnan(D_star) or std::isinf(D_star)) {
       throw std::runtime_error(
           fmt::format("D_star is non-negative, which is unexpected: {}, target "
-                      "Hellinger {}",
+                      "Hellinger {}, contract alpha: {}, rate: {}",
                       D_star,
-                      target_hellinger));
+                      target_hellinger,
+                      contraction_alpha,
+                      rate));
     }
 
     double epsilon = 0.0;
@@ -101,11 +126,12 @@ struct Hellinger : Contraction {
     if (std::isnan(epsilon) || std::isinf(epsilon) || epsilon < 0) {
       throw std::runtime_error(
           fmt::format("Invalid step size epsilon: {}, alpha: {}, beta: {}, "
-                      "D_star: {}",
+                      "D_star: {}, contract alpha: {}",
                       epsilon,
                       alpha.at(0),
                       beta.at(0),
-                      D_star));
+                      D_star,
+                      contraction_alpha));
     }
 
     // clamp epsilon to [0, 1]
