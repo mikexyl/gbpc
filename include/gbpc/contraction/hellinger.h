@@ -22,12 +22,19 @@ struct Hellinger : Contraction {
   Gaussian operator()(const Gaussian& curr, const Gaussian& next) override {
     Gaussian result(curr);
 
+    Pose3 p_curr = Pose3::Expmap(curr.mu()), p_next = Pose3::Expmap(next.mu());
+
+    Matrix66 Ad_inv = p_curr.inverse().AdjointMap();
+
+    Matrix66 cov_curr_in_pcurr = Ad_inv * curr.Sigma() * Ad_inv.transpose();
+    Matrix66 cov_next_in_pcurr = Ad_inv * next.Sigma() * Ad_inv.transpose();
+
     double contraction_alpha = params_.contract_alpha;
 
     std::vector<double> hell, alpha, beta;
-    std::vector<Pose3> means{Pose3::Expmap(curr.mu()),
-                             Pose3::Expmap(next.mu())};
-    std::vector<Eigen::Matrix<double, 6, 6>> covs{curr.Sigma(), next.Sigma()};
+    std::vector<Pose3> means{p_curr, p_next};  // means in Pose3 space
+    std::vector<Eigen::Matrix<double, 6, 6>> covs{
+        cov_curr_in_pcurr, cov_next_in_pcurr};  // covariances in Pose3 space
     computeMetrics(means, covs, hell, alpha, beta);
 
     // check if hell.(0) is NaN or Inf
@@ -137,18 +144,16 @@ struct Hellinger : Contraction {
     // clamp epsilon to [0, 1]
     epsilon = std::max(0.0, std::min(1.0, epsilon));
 
-    auto pose_curr = Pose3::Expmap(curr.mu());
-    auto pose_next = Pose3::Expmap(next.mu());
-    auto mu_d = Pose3::Logmap(pose_curr.inverse() * pose_next);
+    auto mu_d = Pose3::Logmap(p_curr.inverse() * p_next);
     // TODO(mikexyl): should transform Sigma first
-    Matrix6 Delta_Sigma = next.Sigma() - curr.Sigma();
+    Matrix6 Delta_Sigma = cov_next_in_pcurr - cov_curr_in_pcurr;
 
     result.mu() = traits<VALUE>::Logmap(traits<VALUE>::Retract(
         traits<VALUE>::Expmap(curr.mu()), mu_d * epsilon));
-    Matrix6 Delta_Sigma_transformed = TransformCovariance<VALUE>(
-        traits<VALUE>::Expmap(mu_d * epsilon))(Delta_Sigma);
-    result.Sigma() =
-        result.Sigma() + Delta_Sigma_transformed * epsilon * epsilon;
+    Matrix6 Delta_Sigma_transformed = p_curr.AdjointMap() * Delta_Sigma *
+                                      p_curr.AdjointMap().transpose() *
+                                      epsilon * epsilon;
+    result.Sigma() += Delta_Sigma_transformed;
     result.contractionStepSize() = epsilon;
     result.dxy() = target_hellinger;
     result.dxycurr() = hell.at(0);
