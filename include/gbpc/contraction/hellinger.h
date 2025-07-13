@@ -19,14 +19,36 @@ struct Hellinger : Contraction {
   template <typename... Args>
   Hellinger(Args&&... args) : Contraction(std::forward<Args>(args)...) {}
 
-  Gaussian operator()(const Gaussian& curr, const Gaussian& next) override {
+  std::optional<Gaussian> operator()(const Gaussian& curr,
+                                     const Gaussian& next) override {
+    // check if gaussians are valid
+    // check the mu dim
+    if (curr.mu().size() != 6 || next.mu().size() != 6) {
+      throw std::runtime_error(
+          "Hellinger contraction requires 6D Gaussian, but got: " +
+          std::to_string(curr.mu().size()) + " and " +
+          std::to_string(next.mu().size()));
+    }
+    // check the Sigma dim
+    if (curr.Sigma().rows() != 6 || curr.Sigma().cols() != 6 ||
+        next.Sigma().rows() != 6 || next.Sigma().cols() != 6) {
+      throw std::runtime_error(
+          "Hellinger contraction requires 6x6 covariance, but got: " +
+          std::to_string(curr.Sigma().rows()) + "x" +
+          std::to_string(curr.Sigma().cols()) + " and " +
+          std::to_string(next.Sigma().rows()) + "x" +
+          std::to_string(next.Sigma().cols()));
+    }
+
     Gaussian result(curr);
 
     Pose3 p_curr = Pose3::Expmap(curr.mu()), p_next = Pose3::Expmap(next.mu());
+    Pose3 T_next_curr =
+        p_next.inverse() * p_curr;  // T_next_curr = p_next * p_curr.inverse()
 
-    Matrix66 Ad_inv = p_curr.inverse().AdjointMap();
+    Matrix66 Ad_inv = T_next_curr.AdjointMap();
 
-    Matrix66 cov_curr_in_pcurr = Ad_inv * curr.Sigma() * Ad_inv.transpose();
+    Matrix66 cov_curr_in_pcurr = curr.Sigma();
     Matrix66 cov_next_in_pcurr = Ad_inv * next.Sigma() * Ad_inv.transpose();
 
     double contraction_alpha = params_.contract_alpha;
@@ -55,8 +77,9 @@ struct Hellinger : Contraction {
     result.dxycurr() = std::fmax(kHellingerEpsilon, result.dxycurr());
     double rate = 0;
     if (contraction_alpha < 0) {
-      rate = hell.at(0) / result.dxycurr();
-      contraction_alpha = 1 / (1 + params_.gamma * rate);
+      contraction_alpha = params_.gamma / result.dxy();
+      // cap contraction_alpha to [0, 1]
+      contraction_alpha = std::fmax(0.0, std::fmin(1.0, contraction_alpha));
       // check if rate is NaN or Inf
       if (std::isnan(rate) || std::isinf(rate)) {
         throw std::runtime_error("Convergence rate is NaN or Inf: " +
@@ -67,10 +90,17 @@ struct Hellinger : Contraction {
     result.dxycurr() = hell.at(0);
 
     if (hell.at(0) > params_.d_reset) {
-      Gaussian reset_gauss(next);
-      reset_gauss.dxy() = 1.0;
-      reset_gauss.dxycurr() = hell.at(0);
-      return reset_gauss;
+      // // std::cout << "reject key: " << DefaultKeyFormatter(curr.key())
+      //           // << " hellinger distance: " << hell.at(0) << std::endl;
+      if (params_.d_reset < 0) {
+        // if d_reset is negative, we reset the Gaussian to the next one
+        result = next;
+        result.dxy() = hell.at(0);
+        result.dxycurr() = hell.at(0);
+        return result;
+      } else {
+        return std::nullopt;  // reset if hellinger distance is too large
+      }
     }
 
     // clamp hellinger distance to [0, 1], so we can handle default dxy to inf,
@@ -150,9 +180,7 @@ struct Hellinger : Contraction {
 
     result.mu() = traits<VALUE>::Logmap(traits<VALUE>::Retract(
         traits<VALUE>::Expmap(curr.mu()), mu_d * epsilon));
-    Matrix6 Delta_Sigma_transformed = p_curr.AdjointMap() * Delta_Sigma *
-                                      p_curr.AdjointMap().transpose() *
-                                      epsilon * epsilon;
+    Matrix6 Delta_Sigma_transformed = Delta_Sigma * epsilon * epsilon;
     result.Sigma() += Delta_Sigma_transformed;
     result.contractionStepSize() = epsilon;
     result.dxy() = target_hellinger;
@@ -196,8 +224,8 @@ struct Hellinger : Contraction {
     Eigen::Matrix<double, 6, 6> M = C_inv * delta_C;
 
     double trace_term = (M * M).trace();
-    double quadratic_term = delta.transpose() * C_inv * delta_C * C_inv * delta;
-    // double quadratic_term = 0;
+    // double quadratic_term = delta.transpose() * C_inv * delta_C * C_inv * delta;
+    double quadratic_term = 0;
 
     beta = -(1. / 16.) * (trace_term - quadratic_term);  // -1/16 = -0.0625
   }

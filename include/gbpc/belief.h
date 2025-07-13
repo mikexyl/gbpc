@@ -144,13 +144,11 @@ class Belief : public Node {
       case gbpc::GaussianMergeType::DampContract: {
         auto message = messages.front();
         auto damped_message = Gaussian::Damp(*this, message, 0.5);
-        this->contract(damped_message, params);
-        result->status.push_back(UpdateResult::Success);
+        this->contract(damped_message, params, result);
       } break;
       case GaussianMergeType::Contract: {
         auto message = messages.front();
-        this->contract(message, params);
-        result->status.push_back(UpdateResult::Success);
+        this->contract(message, params, result);
       } break;
       default:
         throw std::runtime_error("Unknown GaussianMergeType");
@@ -169,16 +167,18 @@ class Belief : public Node {
     return chi;
   }
 
-  void contract(const Gaussian& other, UpdateParams params = {}) {
-    std::optional<Gaussian> result;
+  void contract(const Gaussian& other,
+                UpdateParams params = {},
+                UpdateResult* result = nullptr) {
+    std::optional<Gaussian> result_gaussian;
     switch (params.metric_type) {
       case MetricType::Hellinger: {
         Hellinger hellinger(params);
-        result = hellinger(*this, other);
+        result_gaussian = hellinger(*this, other);
       } break;
       case MetricType::KLDivergence: {
         KLDivergence kl_divergence(params);
-        result = kl_divergence(*this, other);
+        result_gaussian = kl_divergence(*this, other);
       } break;
       case MetricType::Chi2: {
         throw std::runtime_error("Chi2 contraction is not implemented.");
@@ -187,16 +187,25 @@ class Belief : public Node {
         throw std::runtime_error("Unknown MetricType");
     }
 
-    if (!result.has_value()) {
-      throw std::runtime_error("Contraction failed, result is empty.");
+    if (!result_gaussian.has_value()) {
+      if (result) {
+        result->status.push_back(UpdateResult::Failed);
+        // std::cout << "Contract failed for key: "
+                  // << DefaultKeyFormatter(this->key()) << std::endl;
+        result_gaussian = other;
+      }
+    } else {
+      if (result) {
+        result->status.push_back(UpdateResult::Success);
+      }
     }
 
-    this->mu() = result->mu();
-    this->Sigma() = result->Sigma();
-    this->contractionStepSize() = result->contractionStepSize();
-    this->contractionRate() = result->contractionRate();
-    this->dxycurr() = result->dxycurr();
-    this->dxy() = result->dxy();
+    this->mu() = result_gaussian->mu();
+    this->Sigma() = result_gaussian->Sigma();
+    this->contractionStepSize() = result_gaussian->contractionStepSize();
+    this->contractionRate() = result_gaussian->contractionRate();
+    this->dxycurr() = result_gaussian->dxycurr();
+    this->dxy() = result_gaussian->dxy();
     updateCanonical();
   }
 };

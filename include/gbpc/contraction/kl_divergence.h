@@ -15,7 +15,8 @@ struct KLDivergence : Contraction {
   template <typename... Args>
   KLDivergence(Args&&... args) : Contraction(std::forward<Args>(args)...) {}
 
-  Gaussian operator()(const Gaussian& curr, const Gaussian& next) override {
+  std::optional<Gaussian> operator()(const Gaussian& curr,
+                                     const Gaussian& next) override {
     float dxy_no_eta =
         computeKLDivergence(curr.mu(), next.mu(), curr.Sigma(), next.Sigma());
     float d_yx =
